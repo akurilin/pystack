@@ -1,0 +1,39 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+
+# macOS and editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.python-version.local
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+build/
+dist/
+
+# Node
+node_modules/
+frontend/dist/
+frontend/coverage/
+*.tsbuildinfo
+
+# Generated intermediate API specification
+backend/openapi.json
+
+# Logs and temporary files
+*.log
+tmp/
