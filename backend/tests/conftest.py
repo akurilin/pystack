@@ -1,36 +1,31 @@
 from collections.abc import Generator
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete
-from sqlalchemy.engine import make_url
-from sqlalchemy.orm import Session, sessionmaker
+from psycopg.conninfo import conninfo_to_dict
 
 from pystack_api.core.config import get_settings
-from pystack_api.db.session import get_session
+from pystack_api.db.connection import DatabaseConnection, get_connection
 from pystack_api.main import app
-from pystack_api.models import Task
 
 settings = get_settings()
-test_url = make_url(settings.test_database_url)
-assert test_url.database == "pystack_test", "Tests must only connect to pystack_test"
-
-test_engine = create_engine(settings.test_database_url)
-test_session_factory = sessionmaker(bind=test_engine, expire_on_commit=False)
+test_conninfo = conninfo_to_dict(settings.test_database_url)
+assert test_conninfo["dbname"] == "pystack_test", "Tests must only connect to pystack_test"
 
 
-def override_get_session() -> Generator[Session]:
-    with test_session_factory() as session:
-        yield session
+def override_get_connection() -> Generator[DatabaseConnection]:
+    with psycopg.connect(settings.test_database_url) as connection:
+        yield connection
 
 
-app.dependency_overrides[get_session] = override_get_session
+app.dependency_overrides[get_connection] = override_get_connection
 
 
 @pytest.fixture(autouse=True)
 def clean_tasks() -> Generator[None]:
-    with test_session_factory.begin() as session:
-        session.execute(delete(Task))
+    with psycopg.connect(settings.test_database_url) as connection:
+        connection.execute("DELETE FROM tasks")
     yield
 
 

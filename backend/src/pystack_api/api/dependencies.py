@@ -1,8 +1,7 @@
 from typing import Annotated
 
 from fastapi import Depends
-from sqlalchemy.orm import Session
 
-from pystack_api.db.session import get_session
+from pystack_api.db.connection import DatabaseConnection, get_connection
 
-SessionDependency = Annotated[Session, Depends(get_session)]
+ConnectionDependency = Annotated[DatabaseConnection, Depends(get_connection)]

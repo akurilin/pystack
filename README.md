@@ -3,7 +3,7 @@
 Pystack is a small Trello-style board used to exercise a modern Python and
 TypeScript web stack:
 
-- FastAPI, Pydantic, SQLAlchemy 2.0, DBmate, PostgreSQL, and psycopg 3
+- FastAPI, Pydantic, DBmate, PostgreSQL, and Psycopg 3
 - Vite, React 19, TypeScript, Vitest, Hey API, and TanStack Query
 - uv, Ruff, mypy, Docker Compose, npm, and a root Makefile
 
@@ -19,10 +19,12 @@ frontend/  React application, generated API client, and component tests
 docker/    Local PostgreSQL initialization
 ```
 
-DBmate owns schema migrations as plain SQL independently from the backend's
-SQLAlchemy models. DBmate refreshes the committed `db/schema.sql` snapshot after
-development migrations. Its `pg_dump` calls are transparently delegated to the
-PostgreSQL 18 Compose container, ensuring the client and server versions match.
+DBmate owns schema migrations as plain SQL. The backend uses dedicated
+Psycopg query modules instead of an ORM, and backend tests ask PostgreSQL to
+plan every registered query against the migrated test database. DBmate
+refreshes the committed `db/schema.sql` snapshot after development migrations.
+Its `pg_dump` calls are transparently delegated to the PostgreSQL 18 Compose
+container, ensuring the client and server versions match.
 
 ## Prerequisites
 

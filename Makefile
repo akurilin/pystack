@@ -5,8 +5,8 @@ COMPOSE := docker compose
 DBMATE := PATH="$(CURDIR)/bin:$$PATH" dbmate
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
-DEV_DATABASE_URL := postgresql+psycopg://pystack:pystack@localhost:5432/pystack_dev
-TEST_DATABASE_URL := postgresql+psycopg://pystack:pystack@localhost:5432/pystack_test
+DEV_DATABASE_URL := postgresql://pystack:pystack@localhost:5432/pystack_dev
+TEST_DATABASE_URL := postgresql://pystack:pystack@localhost:5432/pystack_test
 DBMATE_DEV_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_dev?sslmode=disable
 DBMATE_TEST_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_test?sslmode=disable
 

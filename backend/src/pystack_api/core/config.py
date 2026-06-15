@@ -12,8 +12,8 @@ class Settings(BaseSettings):
 
     app_name: str = "Pystack API"
     api_prefix: str = "/api/v1"
-    database_url: str = "postgresql+psycopg://pystack:pystack@localhost:5432/pystack_dev"
-    test_database_url: str = "postgresql+psycopg://pystack:pystack@localhost:5432/pystack_test"
+    database_url: str = "postgresql://pystack:pystack@localhost:5432/pystack_dev"
+    test_database_url: str = "postgresql://pystack:pystack@localhost:5432/pystack_test"
     cors_origins: list[str] = ["http://localhost:5173"]
 
 

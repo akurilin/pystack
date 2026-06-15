@@ -1,9 +1,16 @@
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
-from pystack_api.models.task import TaskStatus
+
+class TaskStatus(StrEnum):
+    BACKLOG = "backlog"
+    READY = "ready"
+    IN_PROGRESS = "in_progress"
+    REVIEW = "review"
+    DONE = "done"
 
 
 class TaskCreate(BaseModel):
@@ -22,8 +29,6 @@ class TaskMove(BaseModel):
 
 
 class TaskRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     id: UUID
     title: str
     description: str

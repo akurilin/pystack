@@ -1,51 +1,65 @@
-from uuid import UUID
+from dataclasses import dataclass
+from string.templatelib import Template
+from typing import cast
+from uuid import UUID, uuid4
 
-from sqlalchemy import case, func, select, update
-from sqlalchemy.orm import Session
+from psycopg.rows import class_row, scalar_row
 
-from pystack_api.models.task import Task, TaskStatus
-from pystack_api.schemas.task import TaskCreate, TaskMove, TaskUpdate
-
-STATUS_ORDER = {status.value: index for index, status in enumerate(TaskStatus)}
-
-
-def list_tasks(session: Session) -> list[Task]:
-    status_order = case(STATUS_ORDER, value=Task.status)
-    return list(
-        session.scalars(select(Task).order_by(status_order, Task.position, Task.created_at))
-    )
+from pystack_api.db.connection import DatabaseConnection
+from pystack_api.queries import tasks as queries
+from pystack_api.schemas.task import TaskCreate, TaskMove, TaskRead, TaskStatus, TaskUpdate
 
 
-def create_task(session: Session, payload: TaskCreate) -> Task:
-    position = _status_count(session, TaskStatus.BACKLOG.value)
-    task = Task(
+@dataclass
+class DeletedTask:
+    status: str
+    position: int
+
+
+def list_tasks(connection: DatabaseConnection) -> list[TaskRead]:
+    with connection.cursor(row_factory=class_row(TaskRead)) as cursor:
+        cursor.execute(queries.list_tasks_query())
+        return cursor.fetchall()
+
+
+def create_task(connection: DatabaseConnection, payload: TaskCreate) -> TaskRead:
+    position = _status_count(connection, TaskStatus.BACKLOG.value)
+    return create_task_at_position(
+        connection,
         title=payload.title,
         description=payload.description,
         status=TaskStatus.BACKLOG.value,
         position=position,
     )
-    session.add(task)
-    session.commit()
-    session.refresh(task)
+
+
+def create_task_at_position(
+    connection: DatabaseConnection,
+    title: str,
+    description: str,
+    status: str,
+    position: int,
+) -> TaskRead:
+    task = _fetch_task(
+        connection,
+        queries.insert_task_query(uuid4(), title, description, status, position),
+    )
+    assert task is not None
     return task
 
 
-def update_task(session: Session, task_id: UUID, payload: TaskUpdate) -> Task | None:
-    task = session.get(Task, task_id)
-    if task is None:
-        return None
-
+def update_task(
+    connection: DatabaseConnection, task_id: UUID, payload: TaskUpdate
+) -> TaskRead | None:
     updates = payload.model_dump(exclude_unset=True, exclude_none=True)
-    for field, value in updates.items():
-        setattr(task, field, value)
+    if not updates:
+        return _get_task(connection, task_id)
 
-    session.commit()
-    session.refresh(task)
-    return task
+    return _fetch_task(connection, queries.update_task_query(task_id, updates))
 
 
-def move_task(session: Session, task_id: UUID, payload: TaskMove) -> Task | None:
-    task = session.get(Task, task_id)
+def move_task(connection: DatabaseConnection, task_id: UUID, payload: TaskMove) -> TaskRead | None:
+    task = _get_task(connection, task_id)
     if task is None:
         return None
 
@@ -53,53 +67,53 @@ def move_task(session: Session, task_id: UUID, payload: TaskMove) -> Task | None
     old_position = task.position
     target_status = payload.status.value
 
-    session.execute(
-        update(Task)
-        .where(Task.status == old_status, Task.position > old_position)
-        .values(position=Task.position - 1)
-    )
-    session.flush()
+    connection.execute(queries.close_status_gap_query(old_status, old_position))
 
     target_position = min(
-        payload.position, _status_count(session, target_status, exclude_id=task.id)
+        payload.position,
+        _status_count(connection, target_status, exclude_id=task.id),
     )
-    session.execute(
-        update(Task)
-        .where(
-            Task.status == target_status,
-            Task.position >= target_position,
-            Task.id != task.id,
-        )
-        .values(position=Task.position + 1)
+    connection.execute(queries.open_status_gap_query(target_status, target_position, task.id))
+
+    return _fetch_task(
+        connection,
+        queries.move_task_query(task.id, target_status, target_position),
     )
 
-    task.status = target_status
-    task.position = target_position
-    session.commit()
-    session.refresh(task)
-    return task
 
+def delete_task(connection: DatabaseConnection, task_id: UUID) -> bool:
+    with connection.cursor(row_factory=class_row(DeletedTask)) as cursor:
+        cursor.execute(queries.delete_task_query(task_id))
+        deleted_task = cursor.fetchone()
 
-def delete_task(session: Session, task_id: UUID) -> bool:
-    task = session.get(Task, task_id)
-    if task is None:
+    if deleted_task is None:
         return False
 
-    status = task.status
-    position = task.position
-    session.delete(task)
-    session.flush()
-    session.execute(
-        update(Task)
-        .where(Task.status == status, Task.position > position)
-        .values(position=Task.position - 1)
-    )
-    session.commit()
+    connection.execute(queries.close_status_gap_query(deleted_task.status, deleted_task.position))
     return True
 
 
-def _status_count(session: Session, status: str, exclude_id: UUID | None = None) -> int:
-    statement = select(func.count(Task.id)).where(Task.status == status)
-    if exclude_id is not None:
-        statement = statement.where(Task.id != exclude_id)
-    return session.scalar(statement) or 0
+def count_tasks(connection: DatabaseConnection) -> int:
+    with connection.cursor(row_factory=scalar_row) as cursor:
+        cursor.execute(queries.count_tasks_query())
+        return cast(int, next(cursor))
+
+
+def _get_task(connection: DatabaseConnection, task_id: UUID) -> TaskRead | None:
+    return _fetch_task(connection, queries.task_by_id_query(task_id))
+
+
+def _fetch_task(connection: DatabaseConnection, query: Template) -> TaskRead | None:
+    with connection.cursor(row_factory=class_row(TaskRead)) as cursor:
+        cursor.execute(query)
+        return cursor.fetchone()
+
+
+def _status_count(
+    connection: DatabaseConnection,
+    status: str,
+    exclude_id: UUID | None = None,
+) -> int:
+    with connection.cursor(row_factory=scalar_row) as cursor:
+        cursor.execute(queries.status_count_query(status, exclude_id))
+        return cast(int, next(cursor))
