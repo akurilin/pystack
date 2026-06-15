@@ -43,9 +43,8 @@ deployment are intentionally left out.
 ```text
 backend/   FastAPI application and integration tests
 bin/       Repository adapters for machine-level tools
-db/        DBmate SQL migrations and schema snapshot
+db/        DBmate SQL migrations, schema snapshot, and local DB bootstrap
 frontend/  React application, generated API client, and component tests
-docker/    Local PostgreSQL initialization
 ```
 
 DBmate owns schema migrations as plain SQL. The backend uses dedicated Psycopg
