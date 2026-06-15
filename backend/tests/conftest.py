@@ -7,7 +7,6 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from pystack_api.core.config import get_settings
-from pystack_api.db.base import Base
 from pystack_api.db.session import get_session
 from pystack_api.main import app
 from pystack_api.models import Task
@@ -26,12 +25,6 @@ def override_get_session() -> Generator[Session]:
 
 
 app.dependency_overrides[get_session] = override_get_session
-
-
-@pytest.fixture(scope="session", autouse=True)
-def create_test_schema() -> Generator[None]:
-    Base.metadata.create_all(test_engine)
-    yield
 
 
 @pytest.fixture(autouse=True)

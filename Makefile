@@ -6,17 +6,19 @@ BACKEND_DIR := backend
 FRONTEND_DIR := frontend
 DEV_DATABASE_URL := postgresql+psycopg://pystack:pystack@localhost:5432/pystack_dev
 TEST_DATABASE_URL := postgresql+psycopg://pystack:pystack@localhost:5432/pystack_test
+DBMATE_DEV_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_dev?sslmode=disable
+DBMATE_TEST_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_test?sslmode=disable
 
 .PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
-	db-reset-test db-seed generate-api api frontend dev test test-backend \
+	db-reset-test db-status db-seed generate-api api frontend dev test test-backend \
 	test-frontend lint format typecheck build check-generated check
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 check-tools: ## Verify required machine-level tools are installed
-	@for tool in uv node npm docker; do \
+	@for tool in uv node npm docker dbmate; do \
 		command -v $$tool >/dev/null || { echo "Missing required tool: $$tool"; exit 1; }; \
 	done
 	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 18)) { console.error(`Node 22.18+ is required; found $${process.versions.node}`); process.exit(1); }'
@@ -41,10 +43,10 @@ db-down: ## Stop local services without deleting data
 db-migrate: db-migrate-dev db-migrate-test ## Migrate development and test databases
 
 db-migrate-dev: db-up ## Migrate the development database
-	cd $(BACKEND_DIR) && PYSTACK_DATABASE_URL="$(DEV_DATABASE_URL)" uv run alembic upgrade head
+	dbmate --url "$(DBMATE_DEV_DATABASE_URL)" --wait --no-dump-schema up --strict
 
 db-migrate-test: db-up ## Migrate the test database
-	cd $(BACKEND_DIR) && PYSTACK_DATABASE_URL="$(TEST_DATABASE_URL)" uv run alembic upgrade head
+	dbmate --url "$(DBMATE_TEST_DATABASE_URL)" --wait --no-dump-schema up --strict
 
 db-reset: db-reset-dev db-reset-test ## Destructively reset, migrate, and seed local databases
 
@@ -62,6 +64,13 @@ db-reset-test: db-up ## Destructively reset and migrate the test database
 		-c "DROP DATABASE IF EXISTS pystack_test;" \
 		-c "CREATE DATABASE pystack_test OWNER pystack;"
 	$(MAKE) db-migrate-test
+
+db-status: db-up ## Show migration status for development and test databases
+	@echo "Development database:"
+	@dbmate --url "$(DBMATE_DEV_DATABASE_URL)" status
+	@echo
+	@echo "Test database:"
+	@dbmate --url "$(DBMATE_TEST_DATABASE_URL)" --no-dump-schema status
 
 db-seed: db-up ## Add repeatable sample data to the development database
 	cd $(BACKEND_DIR) && PYSTACK_DATABASE_URL="$(DEV_DATABASE_URL)" uv run python -m pystack_api.commands.seed
