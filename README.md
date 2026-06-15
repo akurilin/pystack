@@ -26,7 +26,7 @@ the backend, migrations can later become their own project.
 Install these machine-level tools:
 
 - [uv](https://docs.astral.sh/uv/)
-- Node.js and npm
+- Node.js 22.18+ and npm
 - Docker with Docker Compose
 - Make
 
