@@ -87,7 +87,7 @@ generate-api: ## Export OpenAPI and regenerate the typed frontend API client
 check-generated: generate-api ## Confirm the committed frontend API client is current
 	git diff --exit-code -- $(FRONTEND_DIR)/src/api/generated
 
-check-db-schema: db-dump-schema ## Confirm the committed database schema snapshot is current
+check-db-schema: db-migrate-dev db-dump-schema ## Confirm the committed database schema snapshot is current
 	git diff --exit-code -- db/schema.sql
 
 api: ## Run the FastAPI development server
