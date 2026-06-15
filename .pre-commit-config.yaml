@@ -1,0 +1,36 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: Ruff lint
+        entry: uv run --directory backend ruff check --fix .
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+
+      - id: ruff-format
+        name: Ruff format
+        entry: uv run --directory backend ruff format .
+        language: system
+        files: ^backend/.*\.py$
+        pass_filenames: false
+
+      - id: eslint
+        name: ESLint
+        entry: npm --prefix frontend run lint:fix
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+
+      - id: prettier
+        name: Prettier
+        entry: npm --prefix frontend run format
+        language: system
+        files: ^frontend/
+        pass_filenames: false
+
+      - id: gitleaks
+        name: Gitleaks
+        entry: gitleaks git --pre-commit --redact --staged --verbose
+        language: system
+        pass_filenames: false

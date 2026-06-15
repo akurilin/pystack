@@ -13,20 +13,20 @@ DBMATE_TEST_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_te
 .PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
 	db-reset-test db-status db-dump-schema db-seed generate-api api frontend dev \
-	test test-backend test-frontend lint format typecheck build check-generated \
-	check-db-schema check
+	test test-backend test-frontend lint format check-format typecheck build \
+	check-generated check-db-schema check-secrets pre-commit-install pre-commit check
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 check-tools: ## Verify required machine-level tools are installed
-	@for tool in uv node npm docker dbmate; do \
+	@for tool in uv node npm docker dbmate gitleaks; do \
 		command -v $$tool >/dev/null || { echo "Missing required tool: $$tool"; exit 1; }; \
 	done
 	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 18)) { console.error(`Node 22.18+ is required; found $${process.versions.node}`); process.exit(1); }'
 	@$(COMPOSE) version >/dev/null
 
-setup: check-tools backend-sync frontend-install db-up db-migrate db-seed generate-api ## Set up a new development checkout
+setup: check-tools backend-sync frontend-install pre-commit-install db-up db-migrate db-seed generate-api ## Set up a new development checkout
 	@echo "Setup complete. Run 'make dev' to start the application."
 
 backend-sync: ## Install the managed Python runtime and backend dependencies
@@ -115,6 +115,10 @@ format: ## Format backend and frontend source
 	cd $(BACKEND_DIR) && uv run ruff format .
 	cd $(FRONTEND_DIR) && npm run format
 
+check-format: ## Confirm backend and frontend source formatting
+	cd $(BACKEND_DIR) && uv run ruff format --check .
+	cd $(FRONTEND_DIR) && npm run format:check
+
 typecheck: ## Run backend and frontend type checks
 	cd $(BACKEND_DIR) && uv run mypy src tests
 	cd $(FRONTEND_DIR) && npm run typecheck
@@ -122,4 +126,13 @@ typecheck: ## Run backend and frontend type checks
 build: ## Build the production frontend
 	cd $(FRONTEND_DIR) && npm run build
 
-check: check-generated check-db-schema lint typecheck test build ## Run the complete local verification suite
+check-secrets: ## Scan the complete Git history for secrets
+	gitleaks git --redact --verbose .
+
+pre-commit-install: backend-sync ## Install the repository Git pre-commit hook
+	uv run --project $(BACKEND_DIR) pre-commit install
+
+pre-commit: ## Run every pre-commit hook against all tracked files
+	uv run --project $(BACKEND_DIR) pre-commit run --all-files
+
+check: check-generated check-db-schema check-format lint typecheck test build check-secrets ## Run the complete local verification suite
