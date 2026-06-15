@@ -37,3 +37,6 @@ backend/openapi.json
 # Logs and temporary files
 *.log
 tmp/
+
+# Claude Code local overrides (shared settings.json stays tracked)
+.claude/settings.local.json

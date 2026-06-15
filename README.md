@@ -1,13 +1,42 @@
 # Pystack
 
-Pystack is a small Trello-style board used to exercise a modern Python and
-TypeScript web stack:
+Pystack is an opinionated scaffold for a modern Python and TypeScript web
+application. It ships a FastAPI backend, a React frontend with a generated,
+fully typed API client, a PostgreSQL database with plain-SQL migrations, and a
+single Makefile that wires everything together for local development.
 
-- FastAPI, Pydantic, DBmate, PostgreSQL, and Psycopg 3
-- Vite, React 19, TypeScript, Vitest, Hey API, and TanStack Query
-- uv, Ruff, mypy, Docker Compose, npm, and a root Makefile
+It is meant to be cloned and built on. The included Trello-style board is **not**
+the point of the project — it is just an example of a small end-to-end app built
+on the scaffold, a smoke test that exercises the full request path from a React
+component through a typed client to a SQL-backed endpoint. Treat it as
+disposable and replace it with your own application. Authentication and hosted
+deployment are intentionally left out.
 
-Authentication and hosted deployment are intentionally deferred.
+## Stack
+
+**Backend**
+
+- [FastAPI](https://fastapi.tiangolo.com/) and [Pydantic](https://docs.pydantic.dev/) — HTTP layer and request/response models
+- [Psycopg 3](https://www.psycopg.org/psycopg3/) — PostgreSQL access through dedicated query modules instead of an ORM
+- [DBmate](https://github.com/amacneil/dbmate) — schema migrations as plain SQL, with a committed `db/schema.sql` snapshot
+- [uv](https://docs.astral.sh/uv/) — manages the Python runtime and dependencies
+- [Ruff](https://docs.astral.sh/ruff/) and [mypy](https://mypy-lang.org/) — linting, formatting, and strict type checking
+- [pytest](https://docs.pytest.org/) — integration tests that plan every registered query against a migrated test database
+
+**Frontend**
+
+- [Vite](https://vite.dev/), [React 19](https://react.dev/), and [TypeScript](https://www.typescriptlang.org/)
+- [Hey API](https://heyapi.dev/) — generates the typed client from the backend's exported OpenAPI schema
+- [TanStack Query](https://tanstack.com/query) — server-state management
+- [Vitest](https://vitest.dev/) and [Testing Library](https://testing-library.com/) — component tests
+- [ESLint](https://eslint.org/) and [Prettier](https://prettier.io/) — linting and formatting
+
+**Tooling**
+
+- [Docker Compose](https://docs.docker.com/compose/) — runs local PostgreSQL 18
+- [Gitleaks](https://github.com/gitleaks/gitleaks) — secret scanning
+- [pre-commit](https://pre-commit.com/) — Git hook for local checks
+- A root `Makefile` — the single entry point for every common task
 
 ## Repository Layout
 
@@ -19,12 +48,12 @@ frontend/  React application, generated API client, and component tests
 docker/    Local PostgreSQL initialization
 ```
 
-DBmate owns schema migrations as plain SQL. The backend uses dedicated
-Psycopg query modules instead of an ORM, and backend tests ask PostgreSQL to
-plan every registered query against the migrated test database. DBmate
-refreshes the committed `db/schema.sql` snapshot after development migrations.
-Its `pg_dump` calls are transparently delegated to the PostgreSQL 18 Compose
-container, ensuring the client and server versions match.
+DBmate owns schema migrations as plain SQL. The backend uses dedicated Psycopg
+query modules instead of an ORM, and backend tests ask PostgreSQL to plan every
+registered query against the migrated test database. DBmate refreshes the
+committed `db/schema.sql` snapshot after development migrations. Its `pg_dump`
+calls are transparently delegated to the PostgreSQL 18 Compose container,
+ensuring the client and server versions match.
 
 ## Prerequisites
 
@@ -32,6 +61,7 @@ Install these machine-level tools:
 
 - [uv](https://docs.astral.sh/uv/)
 - [DBmate](https://github.com/amacneil/dbmate)
+- [Gitleaks](https://github.com/gitleaks/gitleaks)
 - Node.js 22.18+ and npm
 - Docker with Docker Compose
 - Make
@@ -40,39 +70,76 @@ Python itself does not need to be installed globally. `uv` installs a managed
 Python 3.14 runtime and creates `backend/.venv`. npm dependencies stay in
 `frontend/node_modules`.
 
-## First-Time Setup
+## Quick Start
+
+Clone the repository, then from its root run:
 
 ```bash
 make setup
-```
-
-This installs dependencies, starts PostgreSQL, migrates the development and test
-databases, seeds development data, and generates the frontend API client.
-Re-running setup is safe and does not delete development data.
-
-Start both development servers:
-
-```bash
 make dev
 ```
 
-The API runs at `http://localhost:8000`; the frontend runs at
-`http://localhost:5173`.
+`make setup` installs backend and frontend dependencies, starts PostgreSQL,
+migrates the development and test databases, seeds development data, generates
+the frontend API client, and installs the repository pre-commit hook. Re-running
+it is safe and does not delete development data.
 
-## Common Commands
+`make dev` starts both development servers:
 
-Run `make help` for the complete command list. Useful targets include:
+- API at `http://localhost:8000` (interactive docs at `http://localhost:8000/docs`)
+- Frontend at `http://localhost:5173`
+
+The single PostgreSQL container hosts `pystack_dev` and `pystack_test` on the
+same port. Tests never touch the development database.
+
+## Make Commands
+
+Run `make help` for the full list. The most useful targets:
+
+**Setup and servers**
 
 ```bash
-make db-up          # start the shared local PostgreSQL server
-make db-migrate     # migrate both local databases
+make setup          # set up a fresh checkout end to end
+make dev            # run the backend and frontend dev servers together
+make api            # run only the FastAPI dev server
+make frontend       # run only the Vite dev server
+```
+
+**Database**
+
+```bash
+make db-up          # start the local PostgreSQL server and wait until healthy
+make db-down        # stop local services without deleting data
+make db-migrate     # migrate both the dev and test databases
 make db-status      # show DBmate migration status
-make db-dump-schema # refresh the committed schema snapshot
+make db-dump-schema # refresh the committed db/schema.sql snapshot
+make db-seed        # add repeatable sample data to the dev database
 make db-reset       # destructively reset, migrate, and seed local databases
-make generate-api   # regenerate the typed frontend client
+```
+
+**Code generation**
+
+```bash
+make generate-api   # export OpenAPI and regenerate the typed frontend client
+```
+
+**Quality checks**
+
+```bash
 make test           # run backend and frontend tests
+make lint           # run backend and frontend linters
+make format         # format backend and frontend source
+make typecheck      # run mypy and the TypeScript type checker
+make build          # build the production frontend
+make check-secrets  # scan the full Git history for secrets
+make pre-commit     # run every pre-commit hook against tracked files
 make check          # run the complete verification suite
 ```
 
-The single PostgreSQL container hosts `pystack_dev` and `pystack_test` on the
-same port. Tests never use the development database.
+`make check` runs the same gate you should pass before pushing: it confirms the
+generated client and schema snapshot are current, checks formatting, lints,
+type-checks, runs all tests, builds the frontend, and scans for secrets.
+
+## License
+
+[MIT](LICENSE)
