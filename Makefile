@@ -10,7 +10,7 @@ TEST_DATABASE_URL := postgresql+psycopg://pystack:pystack@localhost:5432/pystack
 .PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
 	db-reset-test db-seed generate-api api frontend dev test test-backend \
-	test-frontend lint format typecheck build check
+	test-frontend lint format typecheck build check-generated check
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -70,6 +70,9 @@ generate-api: ## Export OpenAPI and regenerate the typed frontend API client
 	cd $(BACKEND_DIR) && uv run python -m pystack_api.commands.export_openapi
 	cd $(FRONTEND_DIR) && npm run generate-api
 
+check-generated: generate-api ## Confirm the committed frontend API client is current
+	git diff --exit-code -- $(FRONTEND_DIR)/src/api/generated
+
 api: ## Run the FastAPI development server
 	cd $(BACKEND_DIR) && uv run uvicorn pystack_api.main:app --reload
 
@@ -102,4 +105,4 @@ typecheck: ## Run backend and frontend type checks
 build: ## Build the production frontend
 	cd $(FRONTEND_DIR) && npm run build
 
-check: generate-api lint typecheck test build ## Run the complete local verification suite
+check: check-generated lint typecheck test build ## Run the complete local verification suite
