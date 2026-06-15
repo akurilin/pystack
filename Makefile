@@ -2,6 +2,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 COMPOSE := docker compose
+DBMATE := PATH="$(CURDIR)/bin:$$PATH" dbmate
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
 DEV_DATABASE_URL := postgresql+psycopg://pystack:pystack@localhost:5432/pystack_dev
@@ -11,8 +12,9 @@ DBMATE_TEST_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_te
 
 .PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
-	db-reset-test db-status db-seed generate-api api frontend dev test test-backend \
-	test-frontend lint format typecheck build check-generated check
+	db-reset-test db-status db-dump-schema db-seed generate-api api frontend dev \
+	test test-backend test-frontend lint format typecheck build check-generated \
+	check-db-schema check
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -43,10 +45,10 @@ db-down: ## Stop local services without deleting data
 db-migrate: db-migrate-dev db-migrate-test ## Migrate development and test databases
 
 db-migrate-dev: db-up ## Migrate the development database
-	dbmate --url "$(DBMATE_DEV_DATABASE_URL)" --wait --no-dump-schema up --strict
+	$(DBMATE) --url "$(DBMATE_DEV_DATABASE_URL)" --wait up --strict
 
 db-migrate-test: db-up ## Migrate the test database
-	dbmate --url "$(DBMATE_TEST_DATABASE_URL)" --wait --no-dump-schema up --strict
+	$(DBMATE) --url "$(DBMATE_TEST_DATABASE_URL)" --wait --no-dump-schema up --strict
 
 db-reset: db-reset-dev db-reset-test ## Destructively reset, migrate, and seed local databases
 
@@ -67,10 +69,13 @@ db-reset-test: db-up ## Destructively reset and migrate the test database
 
 db-status: db-up ## Show migration status for development and test databases
 	@echo "Development database:"
-	@dbmate --url "$(DBMATE_DEV_DATABASE_URL)" status
+	@$(DBMATE) --url "$(DBMATE_DEV_DATABASE_URL)" status
 	@echo
 	@echo "Test database:"
-	@dbmate --url "$(DBMATE_TEST_DATABASE_URL)" --no-dump-schema status
+	@$(DBMATE) --url "$(DBMATE_TEST_DATABASE_URL)" --no-dump-schema status
+
+db-dump-schema: db-up ## Refresh db/schema.sql from the development database
+	$(DBMATE) --url "$(DBMATE_DEV_DATABASE_URL)" dump
 
 db-seed: db-up ## Add repeatable sample data to the development database
 	cd $(BACKEND_DIR) && PYSTACK_DATABASE_URL="$(DEV_DATABASE_URL)" uv run python -m pystack_api.commands.seed
@@ -81,6 +86,9 @@ generate-api: ## Export OpenAPI and regenerate the typed frontend API client
 
 check-generated: generate-api ## Confirm the committed frontend API client is current
 	git diff --exit-code -- $(FRONTEND_DIR)/src/api/generated
+
+check-db-schema: db-dump-schema ## Confirm the committed database schema snapshot is current
+	git diff --exit-code -- db/schema.sql
 
 api: ## Run the FastAPI development server
 	cd $(BACKEND_DIR) && uv run uvicorn pystack_api.main:app --reload
@@ -114,4 +122,4 @@ typecheck: ## Run backend and frontend type checks
 build: ## Build the production frontend
 	cd $(FRONTEND_DIR) && npm run build
 
-check: check-generated lint typecheck test build ## Run the complete local verification suite
+check: check-generated check-db-schema lint typecheck test build ## Run the complete local verification suite

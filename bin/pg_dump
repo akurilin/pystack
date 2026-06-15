@@ -1,0 +1,9 @@
+#!/bin/sh
+set -eu
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+
+exec docker compose \
+    --project-directory "$repo_root" \
+    -f "$repo_root/compose.yaml" \
+    exec -T db pg_dump "$@"

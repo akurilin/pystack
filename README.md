@@ -13,14 +13,16 @@ Authentication and hosted deployment are intentionally deferred.
 
 ```text
 backend/   FastAPI application and integration tests
-db/        DBmate SQL migrations
+bin/       Repository adapters for machine-level tools
+db/        DBmate SQL migrations and schema snapshot
 frontend/  React application, generated API client, and component tests
 docker/    Local PostgreSQL initialization
 ```
 
 DBmate owns schema migrations as plain SQL independently from the backend's
-SQLAlchemy models. Migrations are the schema source of truth; schema snapshots
-are disabled so local development does not require a matching `pg_dump` binary.
+SQLAlchemy models. DBmate refreshes the committed `db/schema.sql` snapshot after
+development migrations. Its `pg_dump` calls are transparently delegated to the
+PostgreSQL 18 Compose container, ensuring the client and server versions match.
 
 ## Prerequisites
 
@@ -63,6 +65,7 @@ Run `make help` for the complete command list. Useful targets include:
 make db-up          # start the shared local PostgreSQL server
 make db-migrate     # migrate both local databases
 make db-status      # show DBmate migration status
+make db-dump-schema # refresh the committed schema snapshot
 make db-reset       # destructively reset, migrate, and seed local databases
 make generate-api   # regenerate the typed frontend client
 make test           # run backend and frontend tests
