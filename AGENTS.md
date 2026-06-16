@@ -1,5 +1,12 @@
 # Repository Instructions
 
+## Ephemeral files
+
+- When dev tooling produces ephemeral, low-value output — logs, test results,
+  traces, scratch files — write it under the OS temp directory rather than the
+  repo. Prefer configuring a tool's output path (e.g. Playwright's `outputDir`)
+  over adding the directory to `.gitignore`.
+
 ## Commits
 
 - Keep commits focused around one coherent theme.
