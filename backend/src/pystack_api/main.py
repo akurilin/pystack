@@ -24,6 +24,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        settings.validate_assistant_config()
         database_pool.open(wait=True)
         try:
             yield
@@ -31,6 +32,7 @@ def create_app(
             database_pool.close()
 
     app = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
+    app.state.settings = settings
     app.state.database_pool = database_pool
     app.add_middleware(
         CORSMiddleware,

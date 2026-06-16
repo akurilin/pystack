@@ -3,8 +3,8 @@
 import { type DefaultError, queryOptions, type UseMutationOptions } from '@tanstack/react-query';
 
 import { client } from '../client.gen';
-import { createTask, deleteTask, getHealth, listTasks, moveTask, type Options, updateTask } from '../sdk.gen';
-import type { CreateTaskData, CreateTaskError, CreateTaskResponse, DeleteTaskData, DeleteTaskError, DeleteTaskResponse, GetHealthData, GetHealthResponse, ListTasksData, ListTasksResponse, MoveTaskData, MoveTaskError, MoveTaskResponse, UpdateTaskData, UpdateTaskError, UpdateTaskResponse } from '../types.gen';
+import { chatWithAssistant, createTask, deleteTask, getHealth, listTasks, moveTask, type Options, updateTask } from '../sdk.gen';
+import type { ChatWithAssistantData, ChatWithAssistantError, CreateTaskData, CreateTaskError, CreateTaskResponse, DeleteTaskData, DeleteTaskError, DeleteTaskResponse, GetHealthData, GetHealthResponse, ListTasksData, ListTasksResponse, MoveTaskData, MoveTaskError, MoveTaskResponse, UpdateTaskData, UpdateTaskError, UpdateTaskResponse } from '../types.gen';
 
 export type QueryKey<TOptions extends Options> = [
     Pick<TOptions, 'baseUrl' | 'body' | 'headers' | 'path' | 'query'> & {
@@ -133,6 +133,23 @@ export const moveTaskMutation = (options?: Partial<Options<MoveTaskData>>): UseM
     const mutationOptions: UseMutationOptions<MoveTaskResponse, MoveTaskError, Options<MoveTaskData>> = {
         mutationFn: async (fnOptions) => {
             const { data } = await moveTask({
+                ...options,
+                ...fnOptions,
+                throwOnError: true
+            });
+            return data;
+        }
+    };
+    return mutationOptions;
+};
+
+/**
+ * Chat With Assistant
+ */
+export const chatWithAssistantMutation = (options?: Partial<Options<ChatWithAssistantData>>): UseMutationOptions<unknown, ChatWithAssistantError, Options<ChatWithAssistantData>> => {
+    const mutationOptions: UseMutationOptions<unknown, ChatWithAssistantError, Options<ChatWithAssistantData>> = {
+        mutationFn: async (fnOptions) => {
+            const { data } = await chatWithAssistant({
                 ...options,
                 ...fnOptions,
                 throwOnError: true

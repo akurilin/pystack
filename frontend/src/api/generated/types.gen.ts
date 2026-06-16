@@ -5,6 +5,30 @@ export type ClientOptions = {
 };
 
 /**
+ * AssistantChatMessage
+ */
+export type AssistantChatMessage = {
+    /**
+     * Role
+     */
+    role: 'user' | 'assistant';
+    /**
+     * Content
+     */
+    content: string;
+};
+
+/**
+ * AssistantChatRequest
+ */
+export type AssistantChatRequest = {
+    /**
+     * Messages
+     */
+    messages?: Array<AssistantChatMessage>;
+};
+
+/**
  * HTTPValidationError
  */
 export type HttpValidationError = {
@@ -269,3 +293,26 @@ export type MoveTaskResponses = {
 };
 
 export type MoveTaskResponse = MoveTaskResponses[keyof MoveTaskResponses];
+
+export type ChatWithAssistantData = {
+    body: AssistantChatRequest;
+    path?: never;
+    query?: never;
+    url: '/api/v1/assistant/chat';
+};
+
+export type ChatWithAssistantErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ChatWithAssistantError = ChatWithAssistantErrors[keyof ChatWithAssistantErrors];
+
+export type ChatWithAssistantResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};

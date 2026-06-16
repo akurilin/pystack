@@ -7,7 +7,7 @@ from psycopg.rows import class_row, scalar_row
 
 from pystack_api.db.connection import DatabaseConnection
 from pystack_api.queries import tasks as queries
-from pystack_api.schemas.task import TaskCreate, TaskMove, TaskRead, TaskStatus, TaskUpdate
+from pystack_api.schemas import TaskCreate, TaskMove, TaskRead, TaskStatus, TaskUpdate
 
 
 @dataclass

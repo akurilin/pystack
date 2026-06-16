@@ -2,7 +2,7 @@
 
 import type { Client, ClientMeta, Options as Options2, RequestResult, TDataShape } from './client';
 import { client } from './client.gen';
-import type { CreateTaskData, CreateTaskErrors, CreateTaskResponses, DeleteTaskData, DeleteTaskErrors, DeleteTaskResponses, GetHealthData, GetHealthResponses, ListTasksData, ListTasksResponses, MoveTaskData, MoveTaskErrors, MoveTaskResponses, UpdateTaskData, UpdateTaskErrors, UpdateTaskResponses } from './types.gen';
+import type { ChatWithAssistantData, ChatWithAssistantErrors, ChatWithAssistantResponses, CreateTaskData, CreateTaskErrors, CreateTaskResponses, DeleteTaskData, DeleteTaskErrors, DeleteTaskResponses, GetHealthData, GetHealthResponses, ListTasksData, ListTasksResponses, MoveTaskData, MoveTaskErrors, MoveTaskResponses, UpdateTaskData, UpdateTaskErrors, UpdateTaskResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean, TResponse = unknown> = Options2<TData, ThrowOnError, TResponse> & {
     /**
@@ -62,6 +62,18 @@ export const updateTask = <ThrowOnError extends boolean = false>(options: Option
  */
 export const moveTask = <ThrowOnError extends boolean = false>(options: Options<MoveTaskData, ThrowOnError>): RequestResult<MoveTaskResponses, MoveTaskErrors, ThrowOnError> => (options.client ?? client).post<MoveTaskResponses, MoveTaskErrors, ThrowOnError>({
     url: '/api/v1/tasks/{task_id}/move',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Chat With Assistant
+ */
+export const chatWithAssistant = <ThrowOnError extends boolean = false>(options: Options<ChatWithAssistantData, ThrowOnError>): RequestResult<ChatWithAssistantResponses, ChatWithAssistantErrors, ThrowOnError> => (options.client ?? client).post<ChatWithAssistantResponses, ChatWithAssistantErrors, ThrowOnError>({
+    url: '/api/v1/assistant/chat',
     ...options,
     headers: {
         'Content-Type': 'application/json',

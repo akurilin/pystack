@@ -91,6 +91,24 @@ it is safe and does not delete development data.
 The single PostgreSQL container hosts `pystack_dev` and `pystack_test` on the
 same port. Tests never touch the development database.
 
+## Optional Assistant
+
+The board includes an opt-in Assistant UI chat pane that can inspect and mutate
+tasks through backend tool calls. `.env.example` is the versioned template with
+safe defaults; copy those values into ignored `.env` for local settings and
+secrets.
+
+The API validates assistant configuration during app startup. To run the app
+with the assistant enabled, set an OpenRouter API key in `.env`:
+
+```bash
+PYSTACK_OPENROUTER_API_KEY=...
+```
+
+`OPENROUTER_API_KEY` is also accepted. `PYSTACK_ASSISTANT_MODEL` is a public
+default shown in `.env.example`; `OPENROUTER_MODEL` can override it locally. The
+default model is intended for local smoke testing, not production quality.
+
 ## Make Commands
 
 Run `make help` for the full list. The most useful targets:

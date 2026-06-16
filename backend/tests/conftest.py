@@ -22,6 +22,11 @@ def clean_tasks() -> Generator[None]:
 
 @pytest.fixture
 def client() -> Generator[TestClient]:
-    test_settings = settings.model_copy(update={"database_url": settings.test_database_url})
+    test_settings = settings.model_copy(
+        update={
+            "database_url": settings.test_database_url,
+            "openrouter_api_key": "test-openrouter-key",
+        }
+    )
     with TestClient(create_app(test_settings)) as test_client:
         yield test_client

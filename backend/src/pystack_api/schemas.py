@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -36,3 +37,12 @@ class TaskRead(BaseModel):
     position: int
     created_at: datetime
     updated_at: datetime
+
+
+class AssistantChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=20_000)
+
+
+class AssistantChatRequest(BaseModel):
+    messages: list[AssistantChatMessage] = Field(default_factory=list, max_length=50)

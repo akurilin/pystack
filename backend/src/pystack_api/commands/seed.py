@@ -1,7 +1,7 @@
 import psycopg
 
 from pystack_api.core.config import get_settings
-from pystack_api.schemas.task import TaskStatus
+from pystack_api.schemas import TaskStatus
 from pystack_api.services import tasks as task_service
 
 SAMPLE_TASKS = (
