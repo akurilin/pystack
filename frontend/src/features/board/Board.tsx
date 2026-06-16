@@ -63,6 +63,8 @@ export function Board() {
     });
   };
 
+  // Dropping on a card inserts at that card's position; dropping on the column's
+  // empty space (see onDrop below) appends to the end.
   const dropTask = (status: TaskStatus, position: number) => {
     if (draggedTaskId !== null) {
       move(draggedTaskId, status, position);
@@ -290,6 +292,7 @@ function TaskCard({
       onDragOver={(event) => event.preventDefault()}
       onDragStart={onDragStart}
       onDrop={(event) => {
+        // Stop the column's onDrop from also firing and appending to the end.
         event.stopPropagation();
         onDrop();
       }}

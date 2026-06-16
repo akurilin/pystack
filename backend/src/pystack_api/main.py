@@ -13,6 +13,11 @@ def create_app(
     settings: Settings | None = None,
     database_pool: DatabasePool | None = None,
 ) -> FastAPI:
+    """Build the FastAPI app.
+
+    Settings and the pool are injectable so tests can point the app at the test
+    database and share a single pool across requests.
+    """
     settings = settings or get_settings()
     if database_pool is None:
         database_pool = create_pool(settings.database_url)

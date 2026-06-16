@@ -10,6 +10,7 @@ type DatabasePool = ConnectionPool[DatabaseConnection]
 
 
 def create_pool(database_url: str) -> DatabasePool:
+    """Build a closed pool; the app lifespan opens it so import never touches the DB."""
     return ConnectionPool(database_url, min_size=1, open=False)
 
 

@@ -12,6 +12,8 @@ from pystack_api.schemas.task import TaskCreate, TaskMove, TaskRead, TaskStatus,
 
 @dataclass
 class DeletedTask:
+    """The slot a deleted task vacated, so we can close the gap it leaves behind."""
+
     status: str
     position: int
 
@@ -23,6 +25,7 @@ def list_tasks(connection: DatabaseConnection) -> list[TaskRead]:
 
 
 def create_task(connection: DatabaseConnection, payload: TaskCreate) -> TaskRead:
+    """Create a task at the bottom of the backlog column."""
     position = _status_count(connection, TaskStatus.BACKLOG.value)
     return create_task_at_position(
         connection,
@@ -67,6 +70,9 @@ def move_task(connection: DatabaseConnection, task_id: UUID, payload: TaskMove) 
     old_position = task.position
     target_status = payload.status.value
 
+    # Positions stay contiguous within each column. Pull the source column up to
+    # fill the hole the task leaves, then push the target column down to free a
+    # slot — clamped so a task can't be dropped past the end of its column.
     connection.execute(queries.close_status_gap_query(old_status, old_position))
 
     target_position = min(

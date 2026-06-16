@@ -5,6 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
+        # Resolve .env whether the process runs from the repo root or backend/.
         env_file=("../.env", ".env"),
         env_prefix="PYSTACK_",
         extra="ignore",

@@ -7,6 +7,7 @@ from psycopg import sql
 
 
 def list_tasks_query() -> Template:
+    """Fetch all tasks ordered by board column (left to right), then position."""
     return t"""
         SELECT id, title, description, status, position, created_at, updated_at
         FROM tasks
@@ -36,6 +37,11 @@ def count_tasks_query() -> Template:
 
 
 def status_count_query(status: str, exclude_id: UUID | None = None) -> Template:
+    """Count tasks in a column, optionally ignoring one task.
+
+    Callers exclude the task being moved so its own row doesn't inflate the
+    count when computing a clamped target position.
+    """
     return t"""
         SELECT count(*)
         FROM tasks
@@ -59,6 +65,12 @@ def insert_task_query(
 
 
 def update_task_query(task_id: UUID, updates: Mapping[str, object]) -> Template:
+    """Update only the columns present in ``updates``.
+
+    ``{column:i}`` renders each key as a SQL identifier and ``{value}`` as a
+    bound parameter; ``{joined_assignments:q}`` splices the pre-composed SET
+    clause back into the template as literal SQL.
+    """
     assignments = [t"{column:i} = {value}" for column, value in updates.items()]
     assignments.append(t"updated_at = now()")
     joined_assignments = sql.SQL(", ").join(assignments)
@@ -106,6 +118,13 @@ def delete_task_query(task_id: UUID) -> Template:
 
 @dataclass(frozen=True)
 class QueryCheck:
+    """A query builder paired with a way to invoke it with sample arguments.
+
+    ``builder`` is the bare function (used by tests to verify every builder is
+    registered here); ``build`` produces a concrete query the test suite can
+    EXPLAIN against the real schema to catch SQL that drifts from the tables.
+    """
+
     name: str
     builder: Callable[..., Template]
     build: Callable[[], Template]
@@ -113,6 +132,7 @@ class QueryCheck:
 
 _EXAMPLE_ID = UUID(int=0)
 
+# Every ``*_query`` builder must appear here so the schema-check test exercises it.
 QUERY_CHECKS = (
     QueryCheck("tasks.list", list_tasks_query, list_tasks_query),
     QueryCheck("tasks.by_id", task_by_id_query, lambda: task_by_id_query(_EXAMPLE_ID)),
