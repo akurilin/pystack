@@ -27,6 +27,7 @@ export function Board() {
   const queryClient = useQueryClient();
   const tasksQuery = useQuery(listTasksOptions());
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
+  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
 
   const refreshTasks = async () => {
     await queryClient.invalidateQueries({ queryKey: listTasksQueryKey() });
@@ -92,10 +93,12 @@ export function Board() {
         </p>
       )}
       <section className="board" aria-label="Task board">
-        {COLUMNS.map((column, columnIndex) => {
+        {COLUMNS.map((column) => {
           const columnTasks = tasks
             .filter((task) => task.status === column.status)
             .sort((left, right) => left.position - right.position);
+          const showCreateTaskForm =
+            column.status === "backlog" && isCreateTaskOpen;
 
           return (
             <section
@@ -110,38 +113,17 @@ export function Board() {
                 <span className="task-count">{columnTasks.length}</span>
               </header>
 
-              {column.status === "backlog" && (
-                <CreateTaskForm
-                  isPending={createTask.isPending}
-                  onCreate={(title, description) =>
-                    createTask.mutate({ body: { title, description } })
-                  }
-                />
-              )}
-
               <div className="task-list">
                 {columnTasks.map((task, position) => (
                   <TaskCard
                     key={task.id}
                     task={task}
-                    canMoveLeft={columnIndex > 0}
-                    canMoveRight={columnIndex < COLUMNS.length - 1}
-                    isPending={
-                      updateTask.isPending ||
-                      moveTask.isPending ||
-                      deleteTask.isPending
-                    }
+                    isPending={updateTask.isPending || deleteTask.isPending}
                     onDelete={() =>
                       deleteTask.mutate({ path: { task_id: task.id } })
                     }
                     onDragStart={() => setDraggedTaskId(task.id)}
                     onDrop={() => dropTask(column.status, position)}
-                    onMoveLeft={() =>
-                      move(task.id, COLUMNS[columnIndex - 1].status, 0)
-                    }
-                    onMoveRight={() =>
-                      move(task.id, COLUMNS[columnIndex + 1].status, 0)
-                    }
                     onUpdate={(title, description) =>
                       updateTask.mutate({
                         body: { title, description },
@@ -150,8 +132,30 @@ export function Board() {
                     }
                   />
                 ))}
-                {columnTasks.length === 0 && (
+                {showCreateTaskForm && (
+                  <CreateTaskForm
+                    isPending={createTask.isPending}
+                    onCancel={() => setIsCreateTaskOpen(false)}
+                    onCreate={(title, description) =>
+                      createTask.mutate(
+                        { body: { title, description } },
+                        { onSuccess: () => setIsCreateTaskOpen(false) },
+                      )
+                    }
+                  />
+                )}
+                {columnTasks.length === 0 && !showCreateTaskForm && (
                   <p className="empty-column">Drop a task here</p>
+                )}
+                {column.status === "backlog" && !showCreateTaskForm && (
+                  <button
+                    className="add-task-button"
+                    onClick={() => setIsCreateTaskOpen(true)}
+                    type="button"
+                  >
+                    <span aria-hidden="true">+</span>
+                    Add task
+                  </button>
                 )}
               </div>
             </section>
@@ -164,9 +168,11 @@ export function Board() {
 
 function CreateTaskForm({
   isPending,
+  onCancel,
   onCreate,
 }: {
   isPending: boolean;
+  onCancel: () => void;
   onCreate: (title: string, description: string) => void;
 }) {
   const [title, setTitle] = useState("");
@@ -187,6 +193,7 @@ function CreateTaskForm({
       <label>
         <span>Task title</span>
         <input
+          autoFocus
           maxLength={200}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="What needs doing?"
@@ -204,34 +211,31 @@ function CreateTaskForm({
           value={description}
         />
       </label>
-      <button className="primary-button" disabled={isPending} type="submit">
-        {isPending ? "Adding..." : "Add task"}
-      </button>
+      <div className="create-task__actions">
+        <button className="primary-button" disabled={isPending} type="submit">
+          {isPending ? "Adding..." : "Add task"}
+        </button>
+        <button className="text-button" onClick={onCancel} type="button">
+          Cancel
+        </button>
+      </div>
     </form>
   );
 }
 
 function TaskCard({
   task,
-  canMoveLeft,
-  canMoveRight,
   isPending,
   onDelete,
   onDragStart,
   onDrop,
-  onMoveLeft,
-  onMoveRight,
   onUpdate,
 }: {
   task: TaskRead;
-  canMoveLeft: boolean;
-  canMoveRight: boolean;
   isPending: boolean;
   onDelete: () => void;
   onDragStart: () => void;
   onDrop: () => void;
-  onMoveLeft: () => void;
-  onMoveRight: () => void;
   onUpdate: (title: string, description: string) => void;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -302,24 +306,6 @@ function TaskCard({
       </div>
       <h3>{task.title}</h3>
       {task.description !== "" && <p>{task.description}</p>}
-      <div className="move-actions">
-        <button
-          aria-label={`Move ${task.title} left`}
-          disabled={!canMoveLeft || isPending}
-          onClick={onMoveLeft}
-          type="button"
-        >
-          Previous
-        </button>
-        <button
-          aria-label={`Move ${task.title} right`}
-          disabled={!canMoveRight || isPending}
-          onClick={onMoveRight}
-          type="button"
-        >
-          Next
-        </button>
-      </div>
       <div className="card-actions">
         <button
           className="text-button"

@@ -3,7 +3,13 @@ import {
   QueryClientProvider,
   queryOptions,
 } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -116,10 +122,9 @@ describe("Board", () => {
     const user = userEvent.setup();
     renderBoard();
 
-    await user.type(
-      await screen.findByLabelText("Task title"),
-      "Write release notes",
-    );
+    expect(screen.queryByLabelText("Task title")).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Add task" }));
+    await user.type(screen.getByLabelText("Task title"), "Write release notes");
     await user.type(
       screen.getByLabelText("Description"),
       "Capture the important changes",
@@ -130,20 +135,36 @@ describe("Board", () => {
     expect(
       screen.getByText("Capture the important changes"),
     ).toBeInTheDocument();
+    expect(screen.queryByLabelText("Task title")).not.toBeInTheDocument();
   });
 
-  it("moves a task to the next column", async () => {
-    api.tasks = [makeTask("Move me")];
+  it("cancels the new task form", async () => {
     const user = userEvent.setup();
     renderBoard();
 
-    await user.click(
-      await screen.findByRole("button", { name: "Move Move me right" }),
-    );
+    await user.click(await screen.findByRole("button", { name: "Add task" }));
+    expect(screen.getByLabelText("Task title")).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByLabelText("Task title")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Add task" }),
+    ).toBeInTheDocument();
+  });
+
+  it("moves a task to another column by dragging", async () => {
+    api.tasks = [makeTask("Move me")];
+    renderBoard();
+
+    const card = (await screen.findByText("Move me")).closest("article")!;
     const readyColumn = screen
       .getByRole("heading", { name: "Ready" })
       .closest("section")!;
+    fireEvent.dragStart(card);
+    fireEvent.dragOver(readyColumn);
+    fireEvent.drop(readyColumn);
+
     expect(await within(readyColumn).findByText("Move me")).toBeInTheDocument();
   });
 
