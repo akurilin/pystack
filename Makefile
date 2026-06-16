@@ -13,7 +13,7 @@ DBMATE_TEST_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_te
 .PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
 	db-reset-test db-status db-dump-schema db-seed generate-api api frontend dev \
-	test test-backend test-frontend lint format check-format typecheck build \
+	test test-backend test-frontend test-e2e lint format check-format typecheck build \
 	check-generated check-db-schema check-secrets pre-commit-install pre-commit check
 
 help: ## Show available commands
@@ -106,6 +106,9 @@ test-backend: db-reset-test ## Run backend integration tests
 
 test-frontend: ## Run frontend tests
 	cd $(FRONTEND_DIR) && npm test -- --run
+
+test-e2e: db-migrate-dev ## Run Playwright end-to-end tests against the dev stack
+	cd $(FRONTEND_DIR) && npm run e2e
 
 lint: ## Run backend and frontend linters
 	cd $(BACKEND_DIR) && uv run ruff check .
