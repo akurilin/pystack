@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://render.com/schema/render.yaml.json
+#
+# Mirrors the current Render deployment discovered from the active workspace.
+# Public onrender.com URLs are literal because Blueprints cannot interpolate
+# another service's public URL.
+services:
+  - type: web
+    name: pystack-backend
+    runtime: python
+    repo: https://github.com/akurilin/pystack
+    branch: main
+    rootDir: backend
+    plan: free
+    region: virginia
+    autoDeployTrigger: commit
+    buildCommand: uv sync --frozen --no-dev
+    startCommand: .venv/bin/uvicorn pystack_api.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: PYSTACK_DATABASE_URL
+        fromDatabase:
+          name: pystack-db
+          property: connectionString
+      - key: PYSTACK_CORS_ORIGINS
+        value: '["https://pystack-frontend.onrender.com"]'
+      - key: PYSTACK_OPENROUTER_API_KEY
+        sync: false
+
+  - type: web
+    name: pystack-frontend
+    runtime: static
+    repo: https://github.com/akurilin/pystack
+    branch: main
+    rootDir: frontend
+    autoDeployTrigger: commit
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://pystack.onrender.com
+
+databases:
+  - name: pystack-db
+    databaseName: pystack_prod
+    user: pystack_prod_user
+    plan: free
+    region: virginia
+    postgresMajorVersion: "18"
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere

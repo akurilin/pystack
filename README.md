@@ -21,8 +21,9 @@ It is meant to be cloned and built on. The included Trello-style board is **not*
 the point of the project — it is just an example of a small end-to-end app built
 on the scaffold, a smoke test that exercises the full request path from a React
 component through a typed client to a SQL-backed endpoint. Treat it as
-disposable and replace it with your own application. Authentication and hosted
-deployment are intentionally left out.
+disposable and replace it with your own application. Authentication is
+intentionally left out; hosted deployment is declared for Render with a
+versioned Blueprint and a Make target that reconciles post-creation settings.
 
 ## Stack
 
@@ -53,6 +54,7 @@ deployment are intentionally left out.
 - [Docker Compose](https://docs.docker.com/compose/) — runs local PostgreSQL 18
 - [Gitleaks](https://github.com/gitleaks/gitleaks) — secret scanning
 - [pre-commit](https://pre-commit.com/) — Git hook for local checks
+- [Render Blueprints](https://render.com/docs/infrastructure-as-code) — declared production infrastructure
 - A root `Makefile` — the single entry point for every common task
 
 ## Repository Layout
@@ -126,6 +128,34 @@ PYSTACK_OPENROUTER_API_KEY=...
 default shown in `.env.example`; `OPENROUTER_MODEL` can override it locally. The
 default model is intended for local smoke testing, not production quality.
 
+## Render Infrastructure
+
+Render is the default hosted deployment target for this scaffold. The
+`infra/render.yaml` Blueprint declares the production infrastructure: the FastAPI
+backend service, Vite frontend static site, and Render Postgres database. The
+Blueprint wires Render-managed values such as `PYSTACK_DATABASE_URL` directly
+from the database, while keeping external secrets out of Git.
+
+There is one manual bootstrap step because Render's CLI validates Blueprints but
+does not create the initial Blueprint connection. In the Render Dashboard,
+create a Blueprint from this repository, the `main` branch, and
+`infra/render.yaml`. After Render creates the resources, run:
+
+```bash
+render login
+make infra
+```
+
+`make infra` is the repeatable reconciliation step. It validates the Blueprint,
+discovers the deployed Render service URLs, syncs post-Blueprint environment
+variables from the local environment or ignored `.env` file, deploys services
+whose env vars changed, and runs non-mutating health checks. Re-running it is
+safe: unchanged env vars are left alone and no deploy is triggered unless a
+service configuration value changes.
+
+`PYSTACK_OPENROUTER_API_KEY` is never committed. Set it locally in `.env` or the
+shell before running `make infra`.
+
 ## Make Commands
 
 Run `make help` for the full list. The most useful targets:
@@ -149,6 +179,12 @@ make db-status      # show DBmate migration status
 make db-dump-schema # refresh the committed db/schema.sql snapshot
 make db-seed        # add repeatable sample data to the dev database
 make db-reset       # destructively reset, migrate, and seed local databases
+```
+
+**Infrastructure**
+
+```bash
+make infra          # reconcile Render env vars and health-check the deployment
 ```
 
 **Code generation**

@@ -18,3 +18,13 @@
   `frontend/src/components/ui/`. Assume the full registry is still available:
   pull any additional component on demand with `npx shadcn add <component>`
   rather than hand-writing one or assuming it is missing.
+
+## Database
+
+
+
+## Infrastructure
+
+- The infra should be fully declared in code and not require the user to ever
+  manually update it, with exception for the very first blueprint selection
+  in the Render UI

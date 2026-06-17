@@ -13,6 +13,7 @@ DBMATE_TEST_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_te
 .PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
 	db-reset-test db-status db-status-prod db-migrate-prod psql-prod db-dump-schema db-seed \
+	infra \
 	generate-api api frontend dev \
 	test test-backend test-frontend test-e2e lint format check-format typecheck build \
 	check-generated check-db-schema check-secrets pre-commit-install pre-commit check
@@ -101,6 +102,9 @@ db-dump-schema: db-up ## Refresh db/schema.sql from the development database
 
 db-seed: db-up ## Add repeatable sample data to the development database
 	cd $(BACKEND_DIR) && PYSTACK_DATABASE_URL="$(DEV_DATABASE_URL)" uv run python -m pystack_api.commands.seed
+
+infra: ## Validate Render Blueprint, sync secret env vars, deploy changes, and health-check Render
+	uv run --project $(BACKEND_DIR) python scripts/render_infra.py
 
 generate-api: ## Export OpenAPI and regenerate the typed frontend API client
 	cd $(BACKEND_DIR) && uv run python -m pystack_api.commands.export_openapi
