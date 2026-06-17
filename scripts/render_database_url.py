@@ -5,7 +5,13 @@ import os
 import sys
 import urllib.parse
 
-from render_infra import DEFAULT_API_BASE_URL, POSTGRES_NAME, InfraError, RenderClient, render_api_key
+from render_infra import (
+    DEFAULT_API_BASE_URL,
+    POSTGRES_NAME,
+    InfraError,
+    RenderClient,
+    render_api_key,
+)
 
 
 def parse_args() -> argparse.Namespace:

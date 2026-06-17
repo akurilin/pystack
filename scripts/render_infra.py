@@ -13,7 +13,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_API_BASE_URL = "https://api.render.com/v1"
 
@@ -35,13 +34,16 @@ class RenderService:
 
 class RenderClient:
     def __init__(self, api_key: str, api_base_url: str) -> None:
+        require_http_url(api_base_url)
         self.api_key = api_key
         self.api_base_url = api_base_url.rstrip("/")
 
     def request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
         data = None if body is None else json.dumps(body).encode()
-        request = urllib.request.Request(
-            f"{self.api_base_url}{path}",
+        url = f"{self.api_base_url}{path}"
+        require_http_url(url)
+        request = urllib.request.Request(  # noqa: S310 - validated as http(s) above.
+            url,
             data=data,
             method=method,
             headers={
@@ -51,12 +53,16 @@ class RenderClient:
             },
         )
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(  # noqa: S310 - validated as http(s) above.
+                request, timeout=30
+            ) as response:
                 response_body = response.read()
         except urllib.error.HTTPError as error:
             # Avoid echoing response bodies for requests that might involve
             # secret values. Status and reason are enough to diagnose the call.
-            raise InfraError(f"Render API {method} {path} failed: {error.code} {error.reason}") from error
+            raise InfraError(
+                f"Render API {method} {path} failed: {error.code} {error.reason}"
+            ) from error
         except urllib.error.URLError as error:
             raise InfraError(f"Render API {method} {path} failed: {error.reason}") from error
 
@@ -68,17 +74,16 @@ class RenderClient:
         query = urllib.parse.urlencode({"name": name, "limit": "10"})
         entries = self.request("GET", f"/services?{query}")
         matches = [
-            entry["service"]
-            for entry in entries
-            if entry.get("service", {}).get("name") == name
+            entry["service"] for entry in entries if entry.get("service", {}).get("name") == name
         ]
         if not matches:
             raise InfraError(
-                f"Render service {name!r} was not found. "
-                "Create/sync the Blueprint in Render first."
+                f"Render service {name!r} was not found. Create/sync the Blueprint in Render first."
             )
         if len(matches) > 1:
-            raise InfraError(f"Render service name {name!r} is ambiguous: found {len(matches)} matches.")
+            raise InfraError(
+                f"Render service name {name!r} is ambiguous: found {len(matches)} matches."
+            )
 
         service = matches[0]
         url = service.get("serviceDetails", {}).get("url")
@@ -90,9 +95,7 @@ class RenderClient:
         query = urllib.parse.urlencode({"name": name, "limit": "10"})
         entries = self.request("GET", f"/postgres?{query}")
         matches = [
-            entry["postgres"]
-            for entry in entries
-            if entry.get("postgres", {}).get("name") == name
+            entry["postgres"] for entry in entries if entry.get("postgres", {}).get("name") == name
         ]
         if not matches:
             raise InfraError(
@@ -100,7 +103,9 @@ class RenderClient:
                 "Create/sync the Blueprint in Render first."
             )
         if len(matches) > 1:
-            raise InfraError(f"Render Postgres name {name!r} is ambiguous: found {len(matches)} matches.")
+            raise InfraError(
+                f"Render Postgres name {name!r} is ambiguous: found {len(matches)} matches."
+            )
         return matches[0]["id"]
 
     def get_internal_postgres_url(self, postgres_id: str) -> str:
@@ -122,7 +127,9 @@ class RenderClient:
         self.request("PUT", f"/services/{service_id}/env-vars/{escaped_key}", {"value": value})
 
     def create_deploy(self, service_id: str) -> str:
-        deploy = self.request("POST", f"/services/{service_id}/deploys", {"clearCache": "do_not_clear"})
+        deploy = self.request(
+            "POST", f"/services/{service_id}/deploys", {"clearCache": "do_not_clear"}
+        )
         return deploy["id"]
 
     def get_deploy_status(self, service_id: str, deploy_id: str) -> str:
@@ -137,11 +144,19 @@ def parse_args() -> argparse.Namespace:
             "variables, deploy changed services, and run non-mutating health checks."
         )
     )
-    parser.add_argument("--blueprint", default="infra/render.yaml", help="Blueprint file to validate.")
+    parser.add_argument(
+        "--blueprint", default="infra/render.yaml", help="Blueprint file to validate."
+    )
     parser.add_argument("--api-base-url", default=DEFAULT_API_BASE_URL)
-    parser.add_argument("--timeout", type=int, default=900, help="Seconds to wait for deploys/health.")
-    parser.add_argument("--dry-run", action="store_true", help="Show intended changes without writing.")
-    parser.add_argument("--skip-deploy", action="store_true", help="Update env vars but do not deploy.")
+    parser.add_argument(
+        "--timeout", type=int, default=900, help="Seconds to wait for deploys/health."
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Show intended changes without writing."
+    )
+    parser.add_argument(
+        "--skip-deploy", action="store_true", help="Update env vars but do not deploy."
+    )
     parser.add_argument("--skip-health", action="store_true", help="Skip remote health checks.")
     return parser.parse_args()
 
@@ -157,7 +172,9 @@ def validate_blueprint(blueprint_path: Path) -> None:
         "--confirm",
     ]
     try:
-        result = subprocess.run(command, check=False, text=True, capture_output=True)
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell.
+            command, check=False, text=True, capture_output=True
+        )
     except FileNotFoundError as error:
         raise InfraError("Missing Render CLI. Install it and run `render login` first.") from error
 
@@ -175,7 +192,9 @@ def render_api_key() -> str:
     if api_key := os.environ.get("RENDER_API_KEY"):
         return api_key
 
-    config_path = Path(os.environ.get("RENDER_CLI_CONFIG_PATH", Path.home() / ".render" / "cli.yaml"))
+    config_path = Path(
+        os.environ.get("RENDER_CLI_CONFIG_PATH", Path.home() / ".render" / "cli.yaml")
+    )
     if not config_path.exists():
         raise InfraError("Set RENDER_API_KEY or run `render login` before using Render commands.")
 
@@ -251,7 +270,13 @@ def deploy_changed_services(
 
     deadline = time.monotonic() + timeout_seconds
     pending = dict(deploys)
-    failure_statuses = {"build_failed", "update_failed", "canceled", "pre_deploy_failed", "deactivated"}
+    failure_statuses = {
+        "build_failed",
+        "update_failed",
+        "canceled",
+        "pre_deploy_failed",
+        "deactivated",
+    }
     while pending:
         if time.monotonic() > deadline:
             names = ", ".join(service.name for service in pending)
@@ -275,9 +300,20 @@ def request_url(
     headers: dict[str, str] | None = None,
     timeout_seconds: int = 15,
 ) -> tuple[int, dict[str, str], bytes]:
-    request = urllib.request.Request(url, method=method, headers=headers or {})
-    with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+    require_http_url(url)
+    request = urllib.request.Request(  # noqa: S310 - validated as http(s) above.
+        url, method=method, headers=headers or {}
+    )
+    with urllib.request.urlopen(  # noqa: S310 - validated as http(s) above.
+        request, timeout=timeout_seconds
+    ) as response:
         return response.status, dict(response.headers), response.read()
+
+
+def require_http_url(url: str) -> None:
+    scheme = urllib.parse.urlsplit(url).scheme
+    if scheme not in {"http", "https"}:
+        raise InfraError(f"Refusing to request non-HTTP URL: {url}")
 
 
 def header_value(headers: dict[str, str], name: str) -> str | None:

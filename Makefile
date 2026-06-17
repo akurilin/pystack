@@ -136,16 +136,20 @@ test-frontend: ## Run frontend tests
 test-e2e: db-migrate-dev ## Run Playwright end-to-end tests against the dev stack
 	cd $(FRONTEND_DIR) && npm run e2e
 
-lint: ## Run backend and frontend linters
+lint: ## Run backend, scripts, and frontend linters
 	cd $(BACKEND_DIR) && uv run ruff check .
+	uv run --project $(BACKEND_DIR) ruff check --config $(BACKEND_DIR)/pyproject.toml scripts
 	cd $(FRONTEND_DIR) && npm run lint
 
-format: ## Format backend and frontend source
+format: ## Format backend, scripts, and frontend source
 	cd $(BACKEND_DIR) && uv run ruff format .
+	uv run --project $(BACKEND_DIR) ruff check --fix --config $(BACKEND_DIR)/pyproject.toml scripts
+	uv run --project $(BACKEND_DIR) ruff format --config $(BACKEND_DIR)/pyproject.toml scripts
 	cd $(FRONTEND_DIR) && npm run format
 
-check-format: ## Confirm backend and frontend source formatting
+check-format: ## Confirm backend, scripts, and frontend source formatting
 	cd $(BACKEND_DIR) && uv run ruff format --check .
+	uv run --project $(BACKEND_DIR) ruff format --check --config $(BACKEND_DIR)/pyproject.toml scripts
 	cd $(FRONTEND_DIR) && npm run format:check
 
 typecheck: ## Run backend and frontend type checks
