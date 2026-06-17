@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Snake-themed favicon: an emerald snake coiling in an S over the app's dark theme color. -->
+  <rect width="32" height="32" rx="7" fill="#101827" />
+  <g fill="none" stroke="#34d399" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Body: a vertical S running down the icon, tail at the bottom. -->
+    <path d="M21 9 C21 6 11 6 11 10.5 C11 15 21 15 21 19.5 C21 24 11 24 11 26" />
+    <!-- Forked tongue flicking up from the head. -->
+    <path d="M21.5 4.5 19.8 2.2 M21.5 4.5 23.2 2.2" stroke-width="2" />
+  </g>
+  <!-- Head and eye. -->
+  <circle cx="21" cy="8" r="3.4" fill="#34d399" />
+  <circle cx="22.4" cy="7" r="0.9" fill="#101827" />
+</svg>
