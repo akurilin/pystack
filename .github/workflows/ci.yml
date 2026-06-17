@@ -94,4 +94,9 @@ jobs:
         run: cd frontend && npx playwright install --with-deps chromium
 
       - name: Run end-to-end tests
+        # The app validates assistant config at startup, so the Playwright-spawned
+        # backend needs a key present. The smoke test never calls the assistant;
+        # a dummy value is enough, matching the backend test suite's fixture.
+        env:
+          PYSTACK_OPENROUTER_API_KEY: test-openrouter-key
         run: make test-e2e

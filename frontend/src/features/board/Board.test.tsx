@@ -123,13 +123,25 @@ describe("Board", () => {
     renderBoard();
 
     expect(screen.queryByLabelText("Task title")).not.toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: "Add task" }));
-    await user.type(screen.getByLabelText("Task title"), "Write release notes");
+    // Every column has its own "Add task" trigger; open the Backlog one (first).
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Add task" }))[0],
+    );
+
+    // Scope to the form: its submit button is also labeled "Add task", and the
+    // other columns keep their triggers, so unqualified queries are ambiguous.
+    const createForm = screen.getByRole("form", { name: "Create task" });
     await user.type(
-      screen.getByLabelText("Description"),
+      within(createForm).getByLabelText("Task title"),
+      "Write release notes",
+    );
+    await user.type(
+      within(createForm).getByLabelText("Description"),
       "Capture the important changes",
     );
-    await user.click(screen.getByRole("button", { name: "Add task" }));
+    await user.click(
+      within(createForm).getByRole("button", { name: "Add task" }),
+    );
 
     expect(await screen.findByText("Write release notes")).toBeInTheDocument();
     expect(
@@ -142,15 +154,19 @@ describe("Board", () => {
     const user = userEvent.setup();
     renderBoard();
 
-    await user.click(await screen.findByRole("button", { name: "Add task" }));
-    expect(screen.getByLabelText("Task title")).toBeInTheDocument();
+    await user.click(
+      (await screen.findAllByRole("button", { name: "Add task" }))[0],
+    );
+    const createForm = screen.getByRole("form", { name: "Create task" });
+    expect(within(createForm).getByLabelText("Task title")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(
+      within(createForm).getByRole("button", { name: "Cancel" }),
+    );
 
     expect(screen.queryByLabelText("Task title")).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Add task" }),
-    ).toBeInTheDocument();
+    // With the form closed, every column's trigger is back (one per column).
+    expect(screen.getAllByRole("button", { name: "Add task" })).toHaveLength(5);
   });
 
   it("moves a task to another column by dragging", async () => {
