@@ -7,6 +7,8 @@ against the local database, and sends the tool results back to the model.
 """
 
 import json
+import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
@@ -32,6 +34,10 @@ type OpenRouterMessage = dict[str, Any]
 
 OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_TOOL_ROUNDS = 6
+# Use uvicorn's visible server logger for assistant traces so they show up under
+# `make dev` beside request logs. The trace helper below keeps normal logs compact
+# and reserves full tool payloads for DEBUG.
+logger = logging.getLogger("uvicorn.error")
 
 SYSTEM_PROMPT = """You are the Pystack todo board assistant.
 
@@ -250,24 +256,43 @@ async def stream_assistant_events(
 
             for tool_call in tool_calls:
                 arguments = _parse_tool_arguments(tool_call)
-                yield _encode_event(
+                _log_tool_trace(
+                    "call",
                     {
-                        "type": "tool_call",
-                        "id": tool_call.id,
-                        "name": tool_call.name,
+                        "tool_call_id": tool_call.id,
+                        "tool_name": tool_call.name,
                         "args": arguments,
-                    }
+                    },
                 )
 
+                started_at = time.perf_counter()
                 try:
                     result = execute_task_tool(connection, tool_call.name, arguments)
                     tool_content: JsonObject = result.content
-                    is_error = False
                     mutated = result.mutated
+                    _log_tool_trace(
+                        "result",
+                        {
+                            "tool_call_id": tool_call.id,
+                            "tool_name": tool_call.name,
+                            "duration_ms": _elapsed_ms(started_at),
+                            "mutated": mutated,
+                            "result": tool_content,
+                        },
+                    )
                 except ToolExecutionError as exc:
                     tool_content = {"error": str(exc)}
-                    is_error = True
                     mutated = False
+                    _log_tool_trace(
+                        "error",
+                        {
+                            "tool_call_id": tool_call.id,
+                            "tool_name": tool_call.name,
+                            "duration_ms": _elapsed_ms(started_at),
+                            "error": str(exc),
+                        },
+                        is_error=True,
+                    )
 
                 messages.append(
                     {
@@ -276,16 +301,8 @@ async def stream_assistant_events(
                         "content": json.dumps(tool_content, default=str),
                     }
                 )
-                yield _encode_event(
-                    {
-                        "type": "tool_result",
-                        "id": tool_call.id,
-                        "name": tool_call.name,
-                        "result": tool_content,
-                        "is_error": is_error,
-                        "mutated": mutated,
-                    }
-                )
+                if mutated:
+                    yield _encode_event({"type": "tasks_changed"})
 
         raise AssistantChatError("The assistant reached the maximum tool-call limit.")
     except AssistantChatError as exc:
@@ -520,6 +537,85 @@ def _parse_tool_arguments(tool_call: PendingToolCall) -> JsonObject:
     if not isinstance(parsed, dict):
         raise AssistantChatError(f"Tool arguments for {tool_call.name} were not an object.")
     return cast(JsonObject, parsed)
+
+
+def _elapsed_ms(started_at: float) -> float:
+    return round((time.perf_counter() - started_at) * 1000, 2)
+
+
+def _log_tool_trace(event: str, payload: JsonObject, *, is_error: bool = False) -> None:
+    """Log assistant tool execution without dumping raw board data at INFO.
+
+    Tool payloads can include the entire board. Keep INFO useful for normal
+    operation with a compact summary, and emit full args/results only at DEBUG
+    for deeper troubleshooting.
+    """
+
+    summary = json.dumps(_tool_trace_summary(event, payload), default=str)
+    detail = json.dumps({"event": event, **payload}, default=str)
+    if is_error:
+        logger.warning("assistant_tool_trace %s", summary)
+        logger.debug("assistant_tool_trace_detail %s", detail)
+        return
+    logger.info("assistant_tool_trace %s", summary)
+    logger.debug("assistant_tool_trace_detail %s", detail)
+
+
+def _tool_trace_summary(event: str, payload: JsonObject) -> JsonObject:
+    summary: JsonObject = {"event": event}
+    for key in ("tool_call_id", "tool_name", "duration_ms", "mutated", "error"):
+        if key in payload:
+            summary[key] = payload[key]
+
+    args = payload.get("args")
+    if isinstance(args, dict):
+        summary["args"] = _summarize_tool_args(args)
+
+    result = payload.get("result")
+    if isinstance(result, dict):
+        summary["result"] = _summarize_tool_result(result)
+
+    return summary
+
+
+def _summarize_tool_args(args: JsonObject) -> JsonObject:
+    summary: JsonObject = {}
+    for key in ("task_id", "status", "position"):
+        if key in args:
+            summary[key] = args[key]
+    if "title" in args:
+        summary["has_title"] = True
+    if "description" in args:
+        summary["has_description"] = bool(args["description"])
+    if not summary and args:
+        summary["keys"] = sorted(args)
+    return summary
+
+
+def _summarize_tool_result(result: JsonObject) -> JsonObject:
+    summary: JsonObject = {}
+
+    task = result.get("task")
+    if isinstance(task, dict):
+        for source_key, summary_key in (
+            ("id", "task_id"),
+            ("status", "task_status"),
+            ("position", "task_position"),
+        ):
+            if source_key in task:
+                summary[summary_key] = task[source_key]
+
+    board = result.get("board") if isinstance(result.get("board"), dict) else result
+    if isinstance(board, dict):
+        if "total" in board:
+            summary["board_total"] = board["total"]
+        counts = board.get("counts")
+        if isinstance(counts, dict):
+            summary["board_counts"] = counts
+
+    if not summary and result:
+        summary["keys"] = sorted(result)
+    return summary
 
 
 def _accumulate_tool_calls(

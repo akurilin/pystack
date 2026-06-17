@@ -4,17 +4,15 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   type TextMessagePartProps,
-  type ToolCallMessagePartProps,
   useAuiState,
   useLocalRuntime,
   useMessage,
 } from "@assistant-ui/react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Bot, Send, Square, Wrench } from "lucide-react";
+import { Bot, Send, Square } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { listTasksQueryKey } from "../../api/generated/@tanstack/react-query.gen";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { createAssistantAdapter } from "./assistantAdapter";
@@ -97,7 +95,6 @@ function AssistantMessage() {
       <MessagePrimitive.Parts
         components={{
           Text: AssistantTextPart,
-          tools: { Fallback: AssistantToolPart },
         }}
       />
     </MessagePrimitive.Root>
@@ -118,35 +115,6 @@ function AssistantTextPart({ text }: TextMessagePartProps) {
     >
       {text}
     </p>
-  );
-}
-
-function AssistantToolPart({
-  toolName,
-  args,
-  result,
-  isError,
-}: ToolCallMessagePartProps<Record<string, unknown>, unknown>) {
-  return (
-    <div
-      className={cn(
-        "grid gap-2 rounded-lg border bg-background/50 p-3",
-        isError ? "border-destructive/50" : "border-border",
-      )}
-    >
-      <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase text-muted-foreground">
-        <span className="inline-flex items-center gap-1.5">
-          <Wrench className="size-3" />
-          {toolLabel(toolName)}
-        </span>
-        <Badge variant={isError ? "destructive" : "outline"}>
-          {result === undefined ? "Running" : isError ? "Failed" : "Done"}
-        </Badge>
-      </div>
-      <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
-        {JSON.stringify(result ?? args, null, 2)}
-      </pre>
-    </div>
   );
 }
 
@@ -180,8 +148,4 @@ function Composer() {
       </div>
     </ComposerPrimitive.Root>
   );
-}
-
-function toolLabel(toolName: string) {
-  return toolName.replaceAll("_", " ");
 }

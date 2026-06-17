@@ -2,9 +2,7 @@ import type {
   ChatModelAdapter,
   ThreadAssistantMessagePart,
   ThreadMessage,
-  ToolCallMessagePart,
 } from "@assistant-ui/react";
-import type { ReadonlyJSONObject } from "assistant-stream/utils";
 
 import { client } from "../../api/generated/client.gen";
 
@@ -14,20 +12,7 @@ type AssistantAdapterOptions = {
 
 type AssistantStreamEvent =
   | { type: "text_delta"; text: string }
-  | {
-      type: "tool_call";
-      id: string;
-      name: string;
-      args: ReadonlyJSONObject;
-    }
-  | {
-      type: "tool_result";
-      id: string;
-      name: string;
-      result: unknown;
-      is_error: boolean;
-      mutated: boolean;
-    }
+  | { type: "tasks_changed" }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -56,11 +41,6 @@ export function createAssistantAdapter({
       }
 
       let text = "";
-      const toolParts = new Map<
-        string,
-        ToolCallMessagePart<ReadonlyJSONObject, unknown>
-      >();
-
       for await (const event of readAssistantEvents(response.body)) {
         if (abortSignal.aborted) {
           return;
@@ -69,41 +49,15 @@ export function createAssistantAdapter({
         switch (event.type) {
           case "text_delta":
             text += event.text;
-            yield { content: buildContent(text, toolParts) };
+            yield { content: buildContent(text) };
             break;
-          case "tool_call":
-            toolParts.set(event.id, {
-              type: "tool-call",
-              toolCallId: event.id,
-              toolName: event.name,
-              args: event.args,
-              argsText: JSON.stringify(event.args),
-            });
-            yield { content: buildContent(text, toolParts) };
+          case "tasks_changed":
+            await onTasksChanged();
             break;
-          case "tool_result": {
-            const previous = toolParts.get(event.id) ?? {
-              type: "tool-call" as const,
-              toolCallId: event.id,
-              toolName: event.name,
-              args: {},
-              argsText: "{}",
-            };
-            toolParts.set(event.id, {
-              ...previous,
-              result: event.result,
-              isError: event.is_error,
-            });
-            if (event.mutated) {
-              await onTasksChanged();
-            }
-            yield { content: buildContent(text, toolParts) };
-            break;
-          }
           case "error":
             throw new Error(event.message);
           case "done":
-            yield { content: buildContent(text, toolParts) };
+            yield { content: buildContent(text) };
             return;
         }
       }
@@ -127,15 +81,11 @@ function toRequestMessages(messages: readonly ThreadMessage[]) {
     .filter((message) => message.content !== "");
 }
 
-function buildContent(
-  text: string,
-  toolParts: Map<string, ToolCallMessagePart<ReadonlyJSONObject, unknown>>,
-): ThreadAssistantMessagePart[] {
+function buildContent(text: string): ThreadAssistantMessagePart[] {
   const content: ThreadAssistantMessagePart[] = [];
   if (text.trim() !== "") {
     content.push({ type: "text", text });
   }
-  content.push(...toolParts.values());
   return content;
 }
 
