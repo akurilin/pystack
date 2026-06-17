@@ -1,5 +1,7 @@
+import { Show, SignIn, UserButton } from "@clerk/react";
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Navigate, Route, Routes } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -11,7 +13,56 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AssistantPane } from "./features/assistant/AssistantPane";
 import { Board } from "./features/board/Board";
 
+// The public landing (with the login box) lives at "/", separate from the
+// internal app at "/board". Only the landing is public; "/board" is gated, so
+// signed-out visitors are bounced back to the landing.
 export function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<SignInLanding />} />
+      <Route path="/board" element={<ProtectedBoard />} />
+      {/* Unknown paths fall back to the landing. */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function SignInLanding() {
+  // Shown to everyone. When the visitor already has a session, Clerk's <SignIn>
+  // surfaces a "continue" affordance that routes them on to /board.
+  return (
+    <main className="grid min-h-screen place-items-center px-4 py-8 text-foreground">
+      <div className="grid w-full max-w-sm justify-items-center gap-6">
+        <div className="text-center">
+          <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            Pystack
+          </p>
+          <h1 className="text-3xl leading-none font-semibold text-balance">
+            Your personal board
+          </h1>
+        </div>
+        <SignIn fallbackRedirectUrl="/board" />
+      </div>
+    </main>
+  );
+}
+
+// `<Show>` renders null while auth is still resolving, so the board and the
+// redirect never flash before Clerk knows whether there's a session.
+function ProtectedBoard() {
+  return (
+    <>
+      <Show when="signed-in">
+        <BoardApp />
+      </Show>
+      <Show when="signed-out">
+        <Navigate to="/" replace />
+      </Show>
+    </>
+  );
+}
+
+function BoardApp() {
   const [assistantOpen, setAssistantOpen] = useState(true);
   const [isNarrow, setIsNarrow] = useState(false);
 
@@ -36,9 +87,6 @@ export function App() {
         <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-8">
           <header className="flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
             <div className="min-w-0">
-              <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
-                Pystack smoke test
-              </p>
               <h1 className="text-4xl leading-none font-semibold text-balance sm:text-6xl lg:text-7xl">
                 Product launch board
               </h1>
@@ -56,6 +104,7 @@ export function App() {
                 <ToggleIcon data-icon="inline-start" />
                 {assistantOpen ? "Hide assistant" : "Show assistant"}
               </Button>
+              <UserButton />
             </div>
           </header>
 

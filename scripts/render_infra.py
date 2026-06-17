@@ -381,6 +381,9 @@ def main() -> int:
 
         backend_env = {
             "PYSTACK_CORS_ORIGINS": json.dumps([frontend.url], separators=(",", ":")),
+            # Clerk verifies session tokens were minted for the real frontend
+            # origin; keep it in lockstep with the discovered URL like CORS.
+            "PYSTACK_CLERK_AUTHORIZED_PARTIES": json.dumps([frontend.url], separators=(",", ":")),
         }
         frontend_env = {"VITE_API_URL": backend.url}
 

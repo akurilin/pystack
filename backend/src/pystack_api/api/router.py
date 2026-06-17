@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
+from pystack_api.api.auth import UserIdDependency
 from pystack_api.api.dependencies import ConnectionDependency
 from pystack_api.core.config import Settings
 from pystack_api.db.connection import DatabasePool
@@ -42,8 +43,8 @@ def get_health(request: Request, response: Response) -> HealthStatus:
 
 
 @api_router.get("/tasks", operation_id="listTasks", response_model=list[TaskRead], tags=["tasks"])
-def list_tasks(connection: ConnectionDependency) -> list[TaskRead]:
-    return task_service.list_tasks(connection)
+def list_tasks(connection: ConnectionDependency, user_id: UserIdDependency) -> list[TaskRead]:
+    return task_service.list_tasks(connection, user_id)
 
 
 @api_router.post(
@@ -53,8 +54,10 @@ def list_tasks(connection: ConnectionDependency) -> list[TaskRead]:
     status_code=HTTPStatus.CREATED,
     tags=["tasks"],
 )
-def create_task(payload: TaskCreate, connection: ConnectionDependency) -> TaskRead:
-    return task_service.create_task(connection, payload)
+def create_task(
+    payload: TaskCreate, connection: ConnectionDependency, user_id: UserIdDependency
+) -> TaskRead:
+    return task_service.create_task(connection, user_id, payload)
 
 
 @api_router.patch(
@@ -63,8 +66,13 @@ def create_task(payload: TaskCreate, connection: ConnectionDependency) -> TaskRe
     response_model=TaskRead,
     tags=["tasks"],
 )
-def update_task(task_id: UUID, payload: TaskUpdate, connection: ConnectionDependency) -> TaskRead:
-    task = task_service.update_task(connection, task_id, payload)
+def update_task(
+    task_id: UUID,
+    payload: TaskUpdate,
+    connection: ConnectionDependency,
+    user_id: UserIdDependency,
+) -> TaskRead:
+    task = task_service.update_task(connection, user_id, task_id, payload)
     if task is None:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Task not found")
     return task
@@ -76,8 +84,13 @@ def update_task(task_id: UUID, payload: TaskUpdate, connection: ConnectionDepend
     response_model=TaskRead,
     tags=["tasks"],
 )
-def move_task(task_id: UUID, payload: TaskMove, connection: ConnectionDependency) -> TaskRead:
-    task = task_service.move_task(connection, task_id, payload)
+def move_task(
+    task_id: UUID,
+    payload: TaskMove,
+    connection: ConnectionDependency,
+    user_id: UserIdDependency,
+) -> TaskRead:
+    task = task_service.move_task(connection, user_id, task_id, payload)
     if task is None:
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Task not found")
     return task
@@ -89,8 +102,10 @@ def move_task(task_id: UUID, payload: TaskMove, connection: ConnectionDependency
     status_code=HTTPStatus.NO_CONTENT,
     tags=["tasks"],
 )
-def delete_task(task_id: UUID, connection: ConnectionDependency) -> Response:
-    if not task_service.delete_task(connection, task_id):
+def delete_task(
+    task_id: UUID, connection: ConnectionDependency, user_id: UserIdDependency
+) -> Response:
+    if not task_service.delete_task(connection, user_id, task_id):
         raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail="Task not found")
     return Response(status_code=HTTPStatus.NO_CONTENT)
 
@@ -99,6 +114,7 @@ def delete_task(task_id: UUID, connection: ConnectionDependency) -> Response:
 def chat_with_assistant(
     payload: AssistantChatRequest,
     connection: ConnectionDependency,
+    user_id: UserIdDependency,
     request: Request,
 ) -> StreamingResponse:
     settings = cast(Settings, request.app.state.settings)
@@ -106,6 +122,7 @@ def chat_with_assistant(
         assistant_service.stream_assistant_events(
             settings=settings,
             connection=connection,
+            user_id=user_id,
             request_messages=payload.messages,
         ),
         media_type="application/x-ndjson",

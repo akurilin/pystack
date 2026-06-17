@@ -217,6 +217,7 @@ async def stream_assistant_events(
     *,
     settings: Settings,
     connection: DatabaseConnection,
+    user_id: str,
     request_messages: list[AssistantChatMessage],
 ) -> AsyncIterator[str]:
     """Yield frontend assistant events for one user chat request.
@@ -267,7 +268,7 @@ async def stream_assistant_events(
 
                 started_at = time.perf_counter()
                 try:
-                    result = execute_task_tool(connection, tool_call.name, arguments)
+                    result = execute_task_tool(connection, user_id, tool_call.name, arguments)
                     tool_content: JsonObject = result.content
                     mutated = result.mutated
                     _log_tool_trace(
@@ -313,26 +314,32 @@ async def stream_assistant_events(
 
 def execute_task_tool(
     connection: DatabaseConnection,
+    user_id: str,
     tool_name: str,
     arguments: JsonObject,
 ) -> AssistantToolResult:
-    """Validate and execute one model-requested task tool call."""
+    """Validate and execute one model-requested task tool call.
+
+    All operations are scoped to ``user_id`` so the assistant can only inspect
+    and modify the authenticated user's own board.
+    """
 
     match tool_name:
         case "list_tasks":
             _validate_args(ListTasksArgs, arguments)
-            return AssistantToolResult(_board_payload(task_service.list_tasks(connection)))
+            return AssistantToolResult(_board_payload(task_service.list_tasks(connection, user_id)))
         case "create_task":
             create_args = _validate_args(CreateTaskArgs, arguments)
             created_task = task_service.create_task(
                 connection,
+                user_id,
                 TaskCreate(title=create_args.title, description=create_args.description),
             )
             return AssistantToolResult(
                 {
                     "message": f"Created task '{created_task.title}'.",
                     "task": _task_payload(created_task),
-                    "board": _board_payload(task_service.list_tasks(connection)),
+                    "board": _board_payload(task_service.list_tasks(connection, user_id)),
                 },
                 mutated=True,
             )
@@ -340,6 +347,7 @@ def execute_task_tool(
             update_args = _validate_args(UpdateTaskArgs, arguments)
             updated_task = task_service.update_task(
                 connection,
+                user_id,
                 update_args.task_id,
                 TaskUpdate(title=update_args.title, description=update_args.description),
             )
@@ -349,7 +357,7 @@ def execute_task_tool(
                 {
                     "message": f"Updated task '{updated_task.title}'.",
                     "task": _task_payload(updated_task),
-                    "board": _board_payload(task_service.list_tasks(connection)),
+                    "board": _board_payload(task_service.list_tasks(connection, user_id)),
                 },
                 mutated=True,
             )
@@ -357,6 +365,7 @@ def execute_task_tool(
             move_args = _validate_args(MoveTaskArgs, arguments)
             moved_task = task_service.move_task(
                 connection,
+                user_id,
                 move_args.task_id,
                 TaskMove(status=move_args.status, position=move_args.position),
             )
@@ -366,18 +375,18 @@ def execute_task_tool(
                 {
                     "message": f"Moved task '{moved_task.title}' to {moved_task.status}.",
                     "task": _task_payload(moved_task),
-                    "board": _board_payload(task_service.list_tasks(connection)),
+                    "board": _board_payload(task_service.list_tasks(connection, user_id)),
                 },
                 mutated=True,
             )
         case "delete_task":
             delete_args = _validate_args(DeleteTaskArgs, arguments)
-            if not task_service.delete_task(connection, delete_args.task_id):
+            if not task_service.delete_task(connection, user_id, delete_args.task_id):
                 raise ToolExecutionError("No task was found with that task_id.")
             return AssistantToolResult(
                 {
                     "message": "Deleted the task.",
-                    "board": _board_payload(task_service.list_tasks(connection)),
+                    "board": _board_payload(task_service.list_tasks(connection, user_id)),
                 },
                 mutated=True,
             )

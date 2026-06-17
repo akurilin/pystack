@@ -25,6 +25,17 @@ class Settings(BaseSettings):
         default="openai/gpt-oss-20b:free",
         validation_alias=AliasChoices("PYSTACK_ASSISTANT_MODEL", "OPENROUTER_MODEL"),
     )
+    # Clerk handles all authentication. Every board is private — the only surface a
+    # signed-out visitor can reach is the sign-in landing page. The secret key
+    # verifies session tokens server-side, so it accepts Clerk's conventional
+    # CLERK_SECRET_KEY name in addition to the PYSTACK_ prefix.
+    clerk_secret_key: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PYSTACK_CLERK_SECRET_KEY", "CLERK_SECRET_KEY"),
+    )
+    # Origins permitted to present session tokens, checked during verification to
+    # reject tokens minted for a different frontend. Mirrors the dev frontend URL.
+    clerk_authorized_parties: list[str] = ["http://localhost:5173"]
 
     def validate_assistant_config(self) -> None:
         if self.openrouter_api_key:
@@ -32,6 +43,11 @@ class Settings(BaseSettings):
         raise RuntimeError(
             "Assistant chat requires PYSTACK_OPENROUTER_API_KEY or OPENROUTER_API_KEY."
         )
+
+    def validate_clerk_config(self) -> None:
+        if self.clerk_secret_key:
+            return
+        raise RuntimeError("Authentication requires PYSTACK_CLERK_SECRET_KEY or CLERK_SECRET_KEY.")
 
 
 @lru_cache

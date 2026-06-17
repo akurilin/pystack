@@ -13,7 +13,7 @@ PROD_DATABASE_URL_CMD := uv run --project $(BACKEND_DIR) python scripts/render_d
 
 .PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
-	db-reset-test db-status db-status-prod db-migrate-prod psql-prod db-dump-schema db-seed \
+	db-reset-test db-status db-status-prod db-migrate-prod psql-prod db-dump-schema \
 	infra \
 	generate-api api frontend dev \
 	test test-backend test-frontend test-e2e lint format check-format typecheck build \
@@ -29,7 +29,7 @@ check-tools: ## Verify required machine-level tools are installed
 	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 24 || (major === 24 && minor < 16)) { console.error(`Node 24.16+ is required; found $${process.versions.node}`); process.exit(1); }'
 	@$(COMPOSE) version >/dev/null
 
-setup: check-tools backend-sync frontend-install pre-commit-install db-up db-migrate db-seed generate-api ## Set up a new development checkout
+setup: check-tools backend-sync frontend-install pre-commit-install db-up db-migrate generate-api ## Set up a new development checkout
 	@echo "Setup complete. Run 'make dev' to start the application."
 
 backend-sync: ## Install the managed Python runtime and backend dependencies
@@ -53,15 +53,14 @@ db-migrate-dev: db-up ## Migrate the development database
 db-migrate-test: db-up ## Migrate the test database
 	$(DBMATE) --url "$(DBMATE_TEST_DATABASE_URL)" --wait --no-dump-schema up --strict
 
-db-reset: db-reset-dev db-reset-test ## Destructively reset, migrate, and seed local databases
+db-reset: db-reset-dev db-reset-test ## Destructively reset and migrate local databases
 
-db-reset-dev: db-up ## Destructively reset, migrate, and seed the development database
+db-reset-dev: db-up ## Destructively reset and migrate the development database
 	$(COMPOSE) exec -T db psql -U pystack -d postgres -v ON_ERROR_STOP=1 \
 		-c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'pystack_dev' AND pid <> pg_backend_pid();" \
 		-c "DROP DATABASE IF EXISTS pystack_dev;" \
 		-c "CREATE DATABASE pystack_dev OWNER pystack;"
 	$(MAKE) db-migrate-dev
-	$(MAKE) db-seed
 
 db-reset-test: db-up ## Destructively reset and migrate the test database
 	$(COMPOSE) exec -T db psql -U pystack -d postgres -v ON_ERROR_STOP=1 \
@@ -99,9 +98,6 @@ psql-prod: db-up ## Open an interactive psql session on the production database
 
 db-dump-schema: db-up ## Refresh db/schema.sql from the development database
 	$(DBMATE) --url "$(DBMATE_DEV_DATABASE_URL)" dump
-
-db-seed: db-up ## Add repeatable sample data to the development database
-	cd $(BACKEND_DIR) && PYSTACK_DATABASE_URL="$(DEV_DATABASE_URL)" uv run python -m pystack_api.commands.seed
 
 infra: ## Validate Render Blueprint, sync secret env vars, deploy changes, and health-check Render
 	uv run --project $(BACKEND_DIR) python scripts/render_infra.py

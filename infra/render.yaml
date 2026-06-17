@@ -23,7 +23,11 @@ services:
           property: connectionString
       - key: PYSTACK_CORS_ORIGINS
         value: '["https://pystack-frontend.onrender.com"]'
+      - key: PYSTACK_CLERK_AUTHORIZED_PARTIES
+        value: '["https://pystack-frontend.onrender.com"]'
       - key: PYSTACK_OPENROUTER_API_KEY
+        sync: false
+      - key: PYSTACK_CLERK_SECRET_KEY
         sync: false
 
   - type: web
@@ -35,9 +39,19 @@ services:
     autoDeployTrigger: commit
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
+    # Single-page app: serve index.html for client-side routes (e.g. /board) so a
+    # direct visit or refresh doesn't 404.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
     envVars:
       - key: VITE_API_URL
         value: https://pystack.onrender.com
+      # Build-time publishable key (safe to expose in the bundle). Use the Clerk
+      # production instance's pk_live_ key here.
+      - key: VITE_CLERK_PUBLISHABLE_KEY
+        sync: false
 
 databases:
   - name: pystack-db

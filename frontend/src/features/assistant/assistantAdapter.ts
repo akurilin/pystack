@@ -4,7 +4,7 @@ import type {
   ThreadMessage,
 } from "@assistant-ui/react";
 
-import { client } from "../../api/generated/client.gen";
+import { chatWithAssistant } from "../../api/generated/sdk.gen";
 
 type AssistantAdapterOptions = {
   onTasksChanged: () => void | Promise<void>;
@@ -21,27 +21,30 @@ export function createAssistantAdapter({
 }: AssistantAdapterOptions): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal }) {
-      // The streaming endpoint isn't part of the generated SDK, so we fetch it
-      // by hand — but we reuse the SDK's configured baseUrl so we hit the same
-      // backend. In dev that's "" (relative, via Vite's proxy); in prod it's the
-      // absolute backend URL from VITE_API_URL set in api/config.ts.
-      const baseUrl = client.getConfig().baseUrl ?? "";
-      const response = await fetch(`${baseUrl}/api/v1/assistant/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: toRequestMessages(messages) }),
+      // Call the generated client with parseAs "stream" so it hands back the raw
+      // ReadableStream instead of trying to parse the NDJSON body as JSON. Going
+      // through the client (rather than a hand-rolled fetch) means its baseUrl and
+      // auth interceptor apply, so the Clerk token is attached for us.
+      const { data, error, response } = await chatWithAssistant({
+        body: { messages: toRequestMessages(messages) },
+        parseAs: "stream",
         signal: abortSignal,
       });
 
-      if (!response.ok) {
-        throw new Error(await responseErrorMessage(response));
+      if (abortSignal.aborted) {
+        return;
       }
-      if (response.body === null) {
+      if (error !== undefined || !response?.ok) {
+        throw new Error(assistantErrorMessage(error, response?.status));
+      }
+
+      const stream = data as ReadableStream<Uint8Array> | null;
+      if (stream === null) {
         throw new Error("Assistant response did not include a stream.");
       }
 
       let text = "";
-      for await (const event of readAssistantEvents(response.body)) {
+      for await (const event of readAssistantEvents(stream)) {
         if (abortSignal.aborted) {
           return;
         }
@@ -129,20 +132,20 @@ function parseAssistantEvent(line: string): AssistantStreamEvent {
   return parsed;
 }
 
-async function responseErrorMessage(response: Response): Promise<string> {
-  const text = await response.text();
-  if (text === "") {
-    return `Assistant request failed with HTTP ${response.status}.`;
+// The client has already read the error body for us (FastAPI returns
+// `{ "detail": "..." }`), so pull a message out of that rather than re-reading
+// the consumed response.
+function assistantErrorMessage(error: unknown, status?: number): string {
+  if (typeof error === "string" && error !== "") {
+    return error;
   }
-
-  try {
-    const parsed = JSON.parse(text) as { detail?: unknown };
-    if (typeof parsed.detail === "string") {
-      return parsed.detail;
+  if (error && typeof error === "object" && "detail" in error) {
+    const { detail } = error as { detail?: unknown };
+    if (typeof detail === "string") {
+      return detail;
     }
-  } catch {
-    return text;
   }
-
-  return text;
+  return status
+    ? `Assistant request failed with HTTP ${status}.`
+    : "Assistant request failed.";
 }

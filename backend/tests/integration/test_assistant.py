@@ -8,11 +8,14 @@ from pystack_api.services.assistant import execute_task_tool
 
 settings = get_settings()
 
+USER_ID = "user_assistant_test"
+
 
 def test_assistant_task_tools_mutate_board() -> None:
     with psycopg.connect(settings.test_database_url) as connection:
         created = execute_task_tool(
             connection,
+            USER_ID,
             "create_task",
             {"title": "Draft release notes", "description": "Summarize changes"},
         )
@@ -20,10 +23,11 @@ def test_assistant_task_tools_mutate_board() -> None:
 
         moved = execute_task_tool(
             connection,
+            USER_ID,
             "move_task",
             {"task_id": task_id, "status": "ready", "position": 0},
         )
-        listed = execute_task_tool(connection, "list_tasks", {})
+        listed = execute_task_tool(connection, USER_ID, "list_tasks", {})
 
     assert created.mutated
     assert created.content["task"]["status"] == "backlog"
@@ -38,11 +42,28 @@ def test_app_startup_requires_openrouter_key() -> None:
         update={
             "database_url": settings.test_database_url,
             "openrouter_api_key": None,
+            "clerk_secret_key": "sk_test_dummy",
         }
     )
 
     with (
         pytest.raises(RuntimeError, match="OPENROUTER_API_KEY"),
+        TestClient(create_app(test_settings)),
+    ):
+        pass
+
+
+def test_app_startup_requires_clerk_key() -> None:
+    test_settings = settings.model_copy(
+        update={
+            "database_url": settings.test_database_url,
+            "openrouter_api_key": "test-openrouter-key",
+            "clerk_secret_key": None,
+        }
+    )
+
+    with (
+        pytest.raises(RuntimeError, match="CLERK_SECRET_KEY"),
         TestClient(create_app(test_settings)),
     ):
         pass

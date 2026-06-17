@@ -9,6 +9,9 @@ from pystack_api.db.connection import DatabaseConnection
 from pystack_api.queries import tasks as queries
 from pystack_api.schemas import TaskCreate, TaskMove, TaskRead, TaskStatus, TaskUpdate
 
+# Every operation is scoped to ``user_id`` (the authenticated Clerk user) so a
+# user only ever sees and mutates their own board.
+
 
 @dataclass
 class DeletedTask:
@@ -18,17 +21,18 @@ class DeletedTask:
     position: int
 
 
-def list_tasks(connection: DatabaseConnection) -> list[TaskRead]:
+def list_tasks(connection: DatabaseConnection, user_id: str) -> list[TaskRead]:
     with connection.cursor(row_factory=class_row(TaskRead)) as cursor:
-        cursor.execute(queries.list_tasks_query())
+        cursor.execute(queries.list_tasks_query(user_id))
         return cursor.fetchall()
 
 
-def create_task(connection: DatabaseConnection, payload: TaskCreate) -> TaskRead:
+def create_task(connection: DatabaseConnection, user_id: str, payload: TaskCreate) -> TaskRead:
     """Create a task at the bottom of the backlog column."""
-    position = _status_count(connection, TaskStatus.BACKLOG.value)
+    position = _status_count(connection, user_id, TaskStatus.BACKLOG.value)
     return create_task_at_position(
         connection,
+        user_id=user_id,
         title=payload.title,
         description=payload.description,
         status=TaskStatus.BACKLOG.value,
@@ -38,6 +42,7 @@ def create_task(connection: DatabaseConnection, payload: TaskCreate) -> TaskRead
 
 def create_task_at_position(
     connection: DatabaseConnection,
+    user_id: str,
     title: str,
     description: str,
     status: str,
@@ -45,7 +50,7 @@ def create_task_at_position(
 ) -> TaskRead:
     task = _fetch_task(
         connection,
-        queries.insert_task_query(uuid4(), title, description, status, position),
+        queries.insert_task_query(uuid4(), user_id, title, description, status, position),
     )
     # INSERT ... RETURNING always yields the new row; guard for the type checker
     # (and so the failure is explicit rather than an AssertionError stripped by -O).
@@ -55,17 +60,19 @@ def create_task_at_position(
 
 
 def update_task(
-    connection: DatabaseConnection, task_id: UUID, payload: TaskUpdate
+    connection: DatabaseConnection, user_id: str, task_id: UUID, payload: TaskUpdate
 ) -> TaskRead | None:
     updates = payload.model_dump(exclude_unset=True, exclude_none=True)
     if not updates:
-        return _get_task(connection, task_id)
+        return _get_task(connection, user_id, task_id)
 
-    return _fetch_task(connection, queries.update_task_query(task_id, updates))
+    return _fetch_task(connection, queries.update_task_query(task_id, user_id, updates))
 
 
-def move_task(connection: DatabaseConnection, task_id: UUID, payload: TaskMove) -> TaskRead | None:
-    task = _get_task(connection, task_id)
+def move_task(
+    connection: DatabaseConnection, user_id: str, task_id: UUID, payload: TaskMove
+) -> TaskRead | None:
+    task = _get_task(connection, user_id, task_id)
     if task is None:
         return None
 
@@ -76,40 +83,44 @@ def move_task(connection: DatabaseConnection, task_id: UUID, payload: TaskMove) 
     # Positions stay contiguous within each column. Pull the source column up to
     # fill the hole the task leaves, then push the target column down to free a
     # slot — clamped so a task can't be dropped past the end of its column.
-    connection.execute(queries.close_status_gap_query(old_status, old_position))
+    connection.execute(queries.close_status_gap_query(old_status, user_id, old_position))
 
     target_position = min(
         payload.position,
-        _status_count(connection, target_status, exclude_id=task.id),
+        _status_count(connection, user_id, target_status, exclude_id=task.id),
     )
-    connection.execute(queries.open_status_gap_query(target_status, target_position, task.id))
+    connection.execute(
+        queries.open_status_gap_query(target_status, user_id, target_position, task.id)
+    )
 
     return _fetch_task(
         connection,
-        queries.move_task_query(task.id, target_status, target_position),
+        queries.move_task_query(task.id, user_id, target_status, target_position),
     )
 
 
-def delete_task(connection: DatabaseConnection, task_id: UUID) -> bool:
+def delete_task(connection: DatabaseConnection, user_id: str, task_id: UUID) -> bool:
     with connection.cursor(row_factory=class_row(DeletedTask)) as cursor:
-        cursor.execute(queries.delete_task_query(task_id))
+        cursor.execute(queries.delete_task_query(task_id, user_id))
         deleted_task = cursor.fetchone()
 
     if deleted_task is None:
         return False
 
-    connection.execute(queries.close_status_gap_query(deleted_task.status, deleted_task.position))
+    connection.execute(
+        queries.close_status_gap_query(deleted_task.status, user_id, deleted_task.position)
+    )
     return True
 
 
-def count_tasks(connection: DatabaseConnection) -> int:
+def count_tasks(connection: DatabaseConnection, user_id: str) -> int:
     with connection.cursor(row_factory=scalar_row) as cursor:
-        cursor.execute(queries.count_tasks_query())
+        cursor.execute(queries.count_tasks_query(user_id))
         return cast(int, next(cursor))
 
 
-def _get_task(connection: DatabaseConnection, task_id: UUID) -> TaskRead | None:
-    return _fetch_task(connection, queries.task_by_id_query(task_id))
+def _get_task(connection: DatabaseConnection, user_id: str, task_id: UUID) -> TaskRead | None:
+    return _fetch_task(connection, queries.task_by_id_query(task_id, user_id))
 
 
 def _fetch_task(connection: DatabaseConnection, query: Template) -> TaskRead | None:
@@ -120,9 +131,10 @@ def _fetch_task(connection: DatabaseConnection, query: Template) -> TaskRead | N
 
 def _status_count(
     connection: DatabaseConnection,
+    user_id: str,
     status: str,
     exclude_id: UUID | None = None,
 ) -> int:
     with connection.cursor(row_factory=scalar_row) as cursor:
-        cursor.execute(queries.status_count_query(status, exclude_id))
+        cursor.execute(queries.status_count_query(status, user_id, exclude_id))
         return cast(int, next(cursor))

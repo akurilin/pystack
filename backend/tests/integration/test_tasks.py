@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import cast
 
 from fastapi.testclient import TestClient
@@ -65,3 +66,25 @@ def test_validates_input_and_returns_not_found(client: TestClient) -> None:
     missing_id = "00000000-0000-0000-0000-000000000000"
     response = client.patch(f"/api/v1/tasks/{missing_id}", json={"title": "Missing"})
     assert response.status_code == 404
+
+
+def test_tasks_are_isolated_per_user(client_as: Callable[[str], TestClient]) -> None:
+    alice = client_as("user_alice")
+    bob = client_as("user_bob")
+
+    task = create_task(alice, "Alice's task")
+    task_id = task["id"]
+
+    # Bob has his own empty board and cannot see or touch Alice's task.
+    assert bob.get("/api/v1/tasks").json() == []
+    assert bob.patch(f"/api/v1/tasks/{task_id}", json={"title": "hijack"}).status_code == 404
+    assert (
+        bob.post(
+            f"/api/v1/tasks/{task_id}/move", json={"status": "done", "position": 0}
+        ).status_code
+        == 404
+    )
+    assert bob.delete(f"/api/v1/tasks/{task_id}").status_code == 404
+
+    # Alice's task is untouched.
+    assert [t["title"] for t in alice.get("/api/v1/tasks").json()] == ["Alice's task"]

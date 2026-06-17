@@ -98,9 +98,12 @@ make dev
 ```
 
 `make setup` installs backend and frontend dependencies, starts PostgreSQL,
-migrates the development and test databases, seeds development data, generates
-the frontend API client, and installs the repository pre-commit hook. Re-running
-it is safe and does not delete development data.
+migrates the development and test databases, generates the frontend API client,
+and installs the repository pre-commit hook. Re-running it is safe and does not
+delete development data.
+
+Boards are per-user, so there is no seed data: each account starts with an empty
+board on first sign-in.
 
 `make dev` starts both development servers:
 
@@ -109,6 +112,27 @@ it is safe and does not delete development data.
 
 The single PostgreSQL container hosts `pystack_dev` and `pystack_test` on the
 same port. Tests never touch the development database.
+
+## Authentication
+
+The app uses [Clerk](https://clerk.com) for authentication. The only page a
+signed-out visitor can reach is the public landing at `/`, which is just a login
+box; the board lives at `/board` and is gated, so signed-out visitors are
+redirected back to the landing. Each signed-in user gets their own private board:
+tasks are owned by the Clerk user id (the JWT `sub` claim), and every API request
+is scoped to the authenticated user.
+
+To run locally, create a Clerk dev instance at
+[dashboard.clerk.com](https://dashboard.clerk.com) and set its keys in `.env`
+(both the backend and Vite read this single repo-root file):
+
+```bash
+PYSTACK_CLERK_SECRET_KEY=sk_test_...   # backend: verifies session tokens
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_... # frontend: initializes Clerk
+```
+
+The API validates the Clerk secret key during startup and refuses to boot
+without it. `CLERK_SECRET_KEY` is also accepted.
 
 ## Optional Assistant
 
@@ -141,8 +165,10 @@ does not create the initial Blueprint connection:
 
 1. In the Render Dashboard, create a Blueprint from this repository, the `main`
    branch, and `infra/render.yaml`. Render will ask for
-   `PYSTACK_OPENROUTER_API_KEY` because it is marked `sync: false`; paste the
-   production OpenRouter key there, then wait for provisioning to finish.
+   the env vars marked `sync: false` — `PYSTACK_OPENROUTER_API_KEY`,
+   `PYSTACK_CLERK_SECRET_KEY`, and the frontend's `VITE_CLERK_PUBLISHABLE_KEY`.
+   Paste the production OpenRouter key and your Clerk production instance keys
+   there, then wait for provisioning to finish.
 2. Reconcile post-creation settings and run non-mutating health checks:
 
 ```bash
@@ -192,8 +218,7 @@ make db-down        # stop local services without deleting data
 make db-migrate     # migrate both the dev and test databases
 make db-status      # show DBmate migration status
 make db-dump-schema # refresh the committed db/schema.sql snapshot
-make db-seed        # add repeatable sample data to the dev database
-make db-reset       # destructively reset, migrate, and seed local databases
+make db-reset       # destructively reset and migrate local databases
 ```
 
 **Infrastructure**

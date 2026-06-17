@@ -40,6 +40,7 @@ CREATE TABLE public.tasks (
     "position" integer NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    user_id text NOT NULL,
     CONSTRAINT ck_tasks_position_nonnegative CHECK (("position" >= 0)),
     CONSTRAINT ck_tasks_status CHECK (((status)::text = ANY ((ARRAY['backlog'::character varying, 'ready'::character varying, 'in_progress'::character varying, 'review'::character varying, 'done'::character varying])::text[])))
 );
@@ -62,10 +63,10 @@ ALTER TABLE ONLY public.tasks
 
 
 --
--- Name: ix_tasks_status_position; Type: INDEX; Schema: public; Owner: -
+-- Name: ix_tasks_user_status_position; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_tasks_status_position ON public.tasks USING btree (status, "position");
+CREATE INDEX ix_tasks_user_status_position ON public.tasks USING btree (user_id, status, "position");
 
 
 --
@@ -80,4 +81,5 @@ CREATE INDEX ix_tasks_status_position ON public.tasks USING btree (status, "posi
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20260615000100');
+    ('20260615000100'),
+    ('20260617120000');
