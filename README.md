@@ -36,6 +36,7 @@ target that reconciles post-creation settings.
 - [uv](https://docs.astral.sh/uv/) — manages the Python runtime and dependencies
 - [Ruff](https://docs.astral.sh/ruff/) and [mypy](https://mypy-lang.org/) — linting, formatting, and strict type checking
 - [pytest](https://docs.pytest.org/) — integration tests that plan every registered query against a migrated test database
+- [Clerk](https://clerk.com/) — authentication; the backend verifies session tokens and scopes every request to the signed-in user
 
 **Frontend**
 
@@ -43,6 +44,7 @@ target that reconciles post-creation settings.
 - [Tailwind CSS v4](https://tailwindcss.com/) — utility-first styling through the official Vite plugin
 - [shadcn/ui](https://ui.shadcn.com/) — Radix UI-based components vendored into `frontend/src/components/ui/`; only the components in use are kept, pull more with `npx shadcn add`
 - [Lucide](https://lucide.dev/) — icon set
+- [Clerk](https://clerk.com/) — authentication UI and session management via `@clerk/react`
 - [assistant-ui](https://www.assistant-ui.com/) — chat primitives for the optional Assistant pane
 - [Hey API](https://heyapi.dev/) — generates the typed client from the backend's exported OpenAPI schema
 - [TanStack Query](https://tanstack.com/query) — server-state management
