@@ -1,11 +1,12 @@
 # Repository Instructions
 
+- Do not over-engineer, prematurely abstract, prematurely optimize or future-proof.
+  Use simple, elegant, maintainable solutions.
+- Add comments and documentaiton to solutions that may be non-obvious to future readers.
+
 ## Commits
 
 - Keep commits focused around one coherent theme.
-- Before every commit, inspect the complete staged file list and staged diff.
-- Confirm each staged file belongs in Git and remove accidental local, secret,
-  cache, build, coverage, dependency, or generated artifacts before committing.
 - Commit lockfiles and intentionally versioned generated artifacts, including the
   frontend API client, when their source inputs change.
 
