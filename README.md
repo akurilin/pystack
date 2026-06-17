@@ -21,9 +21,10 @@ It is meant to be cloned and built on. The included Trello-style board is **not*
 the point of the project — it is just an example of a small end-to-end app built
 on the scaffold, a smoke test that exercises the full request path from a React
 component through a typed client to a SQL-backed endpoint. Treat it as
-disposable and replace it with your own application. Authentication is
-intentionally left out; hosted deployment is declared for Render with a
-versioned Blueprint and a Make target that reconciles post-creation settings.
+disposable and replace it with your own application. Authentication is handled by
+[Clerk](https://clerk.com), with every board private to its signed-in user;
+hosted deployment is declared for Render with a versioned Blueprint and a Make
+target that reconciles post-creation settings.
 
 ## Stack
 
@@ -132,7 +133,24 @@ VITE_CLERK_PUBLISHABLE_KEY=pk_test_... # frontend: initializes Clerk
 ```
 
 The API validates the Clerk secret key during startup and refuses to boot
-without it. `CLERK_SECRET_KEY` is also accepted.
+without it. `CLERK_SECRET_KEY` is also accepted. The backend also rejects session
+tokens minted for an unexpected origin via `PYSTACK_CLERK_AUTHORIZED_PARTIES`,
+which defaults to the local frontend and is reconciled to the deployed origins by
+`make infra`.
+
+The Playwright end-to-end suite signs in through Clerk, so it needs the keys
+above plus a dedicated test user. Set its credentials in `.env`:
+
+```bash
+E2E_CLERK_USER_USERNAME=...
+E2E_CLERK_USER_PASSWORD=...
+```
+
+Configure that user **without** multi-factor or device ("client trust")
+verification so a scripted password sign-in completes in one step; otherwise the
+sign-in stops at a second factor and the suite cannot proceed. `make test-e2e`
+fails fast and lists any missing variables. In CI the same four values come from
+repository secrets of the same names.
 
 ## Optional Assistant
 
@@ -184,12 +202,20 @@ make db-migrate-prod
 
 `make infra` is the repeatable reconciliation step. It validates the Blueprint,
 discovers the deployed Render service URLs, syncs derived runtime values such as
-`PYSTACK_CORS_ORIGINS` and `VITE_API_URL`, deploys services whose env vars
-changed, and runs non-mutating health checks. Re-running it is safe: unchanged
-env vars are left alone and no deploy is triggered unless a service
-configuration value changes. It intentionally does not set
-`PYSTACK_OPENROUTER_API_KEY`, so a local personal key cannot overwrite the
+`PYSTACK_CORS_ORIGINS`, `PYSTACK_CLERK_AUTHORIZED_PARTIES`, and `VITE_API_URL`,
+deploys services whose env vars changed, and runs non-mutating health checks.
+Re-running it is safe: unchanged env vars are left alone and no deploy is
+triggered unless a service configuration value changes. It intentionally does not
+set `PYSTACK_OPENROUTER_API_KEY`, so a local personal key cannot overwrite the
 production key entered in Render.
+
+If you serve the frontend from a custom domain, set `FRONTEND_CUSTOM_ORIGIN` in
+`scripts/render_infra.py` so `make infra` allows it for both CORS and Clerk
+authorized parties, and point that domain at the Render static site. A Clerk
+**production** instance additionally serves its Frontend API from a custom
+subdomain (e.g. `clerk.yourdomain.com`); add the CNAME records Clerk lists under
+its dashboard's Domains section, or sign-in fails to load in production because
+the Clerk endpoints do not resolve.
 
 Production database commands also use Render discovery. `make db-status-prod`,
 `make db-migrate-prod`, and `make psql-prod` resolve the external Render
