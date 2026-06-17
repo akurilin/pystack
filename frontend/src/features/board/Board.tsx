@@ -17,7 +17,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import {
   createTaskMutation,
   deleteTaskMutation,
@@ -31,22 +30,13 @@ import type { TaskRead, TaskStatus } from "../../api/generated/types.gen";
 const COLUMNS: ReadonlyArray<{
   status: TaskStatus;
   label: string;
-  marker: string;
 }> = [
-  { status: "backlog", label: "Backlog", marker: "01" },
-  { status: "ready", label: "Ready", marker: "02" },
-  { status: "in_progress", label: "In progress", marker: "03" },
-  { status: "review", label: "Review", marker: "04" },
-  { status: "done", label: "Done", marker: "05" },
+  { status: "backlog", label: "Backlog" },
+  { status: "ready", label: "Ready" },
+  { status: "in_progress", label: "In progress" },
+  { status: "review", label: "Review" },
+  { status: "done", label: "Done" },
 ];
-
-const STATUS_MARKER_CLASSES: Record<TaskStatus, string> = {
-  backlog: "bg-sky-500/10 text-sky-300 ring-sky-500/25",
-  ready: "bg-violet-500/10 text-violet-300 ring-violet-500/25",
-  in_progress: "bg-amber-500/10 text-amber-300 ring-amber-500/25",
-  review: "bg-rose-500/10 text-rose-300 ring-rose-500/25",
-  done: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25",
-};
 
 export function Board() {
   const queryClient = useQueryClient();
@@ -170,15 +160,7 @@ export function Board() {
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => dropTask(column.status, columnTasks.length)}
             >
-              <header className="mb-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-border/70 px-1 pb-3">
-                <span
-                  className={cn(
-                    "grid size-7 place-items-center rounded-full text-[0.68rem] font-semibold ring-1",
-                    STATUS_MARKER_CLASSES[column.status],
-                  )}
-                >
-                  {column.marker}
-                </span>
+              <header className="mb-3 grid grid-cols-[1fr_auto] items-center gap-3 border-b border-border/70 px-1 pb-3">
                 <h2 className="text-xs font-semibold uppercase text-foreground">
                   {column.label}
                 </h2>
