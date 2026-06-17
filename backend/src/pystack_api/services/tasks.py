@@ -47,7 +47,10 @@ def create_task_at_position(
         connection,
         queries.insert_task_query(uuid4(), title, description, status, position),
     )
-    assert task is not None
+    # INSERT ... RETURNING always yields the new row; guard for the type checker
+    # (and so the failure is explicit rather than an AssertionError stripped by -O).
+    if task is None:
+        raise RuntimeError("INSERT did not return the created task")
     return task
 
 
