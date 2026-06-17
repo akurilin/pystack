@@ -137,24 +137,39 @@ Blueprint wires Render-managed values such as `PYSTACK_DATABASE_URL` directly
 from the database, while keeping external secrets out of Git.
 
 There is one manual bootstrap step because Render's CLI validates Blueprints but
-does not create the initial Blueprint connection. In the Render Dashboard,
-create a Blueprint from this repository, the `main` branch, and
-`infra/render.yaml`. After Render creates the resources, run:
+does not create the initial Blueprint connection:
+
+1. In the Render Dashboard, create a Blueprint from this repository, the `main`
+   branch, and `infra/render.yaml`. Render will ask for
+   `PYSTACK_OPENROUTER_API_KEY` because it is marked `sync: false`; paste the
+   production OpenRouter key there, then wait for provisioning to finish.
+2. Reconcile post-creation settings and run non-mutating health checks:
 
 ```bash
 render login
 make infra
 ```
 
-`make infra` is the repeatable reconciliation step. It validates the Blueprint,
-discovers the deployed Render service URLs, syncs post-Blueprint environment
-variables from the local environment or ignored `.env` file, deploys services
-whose env vars changed, and runs non-mutating health checks. Re-running it is
-safe: unchanged env vars are left alone and no deploy is triggered unless a
-service configuration value changes.
+3. Apply production database migrations:
 
-`PYSTACK_OPENROUTER_API_KEY` is never committed. Set it locally in `.env` or the
-shell before running `make infra`.
+```bash
+make db-migrate-prod
+```
+
+`make infra` is the repeatable reconciliation step. It validates the Blueprint,
+discovers the deployed Render service URLs, syncs derived runtime values such as
+`PYSTACK_CORS_ORIGINS` and `VITE_API_URL`, deploys services whose env vars
+changed, and runs non-mutating health checks. Re-running it is safe: unchanged
+env vars are left alone and no deploy is triggered unless a service
+configuration value changes. It intentionally does not set
+`PYSTACK_OPENROUTER_API_KEY`, so a local personal key cannot overwrite the
+production key entered in Render.
+
+Production database commands also use Render discovery. `make db-status-prod`,
+`make db-migrate-prod`, and `make psql-prod` resolve the external Render
+Postgres URL at runtime from the Render API, then pass it to DBmate or psql
+without writing it to a local file. Set `DBMATE_PROD_DATABASE_URL` in the shell
+only if you need to override Render discovery.
 
 ## Make Commands
 

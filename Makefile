@@ -9,6 +9,7 @@ DEV_DATABASE_URL := postgresql://pystack:pystack@localhost:5432/pystack_dev
 TEST_DATABASE_URL := postgresql://pystack:pystack@localhost:5432/pystack_test
 DBMATE_DEV_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_dev?sslmode=disable
 DBMATE_TEST_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_test?sslmode=disable
+PROD_DATABASE_URL_CMD := uv run --project $(BACKEND_DIR) python scripts/render_database_url.py
 
 .PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
@@ -76,26 +77,25 @@ db-status: db-up ## Show migration status for development and test databases
 	@echo "Test database:"
 	@$(DBMATE) --url "$(DBMATE_TEST_DATABASE_URL)" --no-dump-schema status
 
-# Production migrations read their URL from .env.prod (gitignored) so the
-# credential never lands in the Makefile or git. There is intentionally no
-# prod reset/drop target: the destructive db-reset-* flow can never reach prod.
-# --no-dump-schema keeps a prod run from rewriting the local db/schema.sql.
+# Production migrations resolve the Render Postgres URL at runtime, so generated
+# database credentials do not need to be copied into a local env file. There is
+# intentionally no prod reset/drop target: the destructive db-reset-* flow can
+# never reach prod. --no-dump-schema keeps a prod run from rewriting schema.sql.
 db-status-prod: ## Show migration status for the production database
-	@test -f .env.prod || { echo "Missing .env.prod (copy .env.prod.example and fill in the URL)"; exit 1; }
-	@set -a; . ./.env.prod; set +a; \
-		$(DBMATE) --url "$$DBMATE_PROD_DATABASE_URL" --no-dump-schema status
+	@DATABASE_URL="$$($(PROD_DATABASE_URL_CMD))" && \
+		export DATABASE_URL && \
+		$(DBMATE) --env DATABASE_URL --no-dump-schema status
 
 db-migrate-prod: ## Apply pending migrations to the production database
-	@test -f .env.prod || { echo "Missing .env.prod (copy .env.prod.example and fill in the URL)"; exit 1; }
-	set -a; . ./.env.prod; set +a; \
-		$(DBMATE) --url "$$DBMATE_PROD_DATABASE_URL" --wait --no-dump-schema up --strict
+	@DATABASE_URL="$$($(PROD_DATABASE_URL_CMD))" && \
+		export DATABASE_URL && \
+		$(DBMATE) --env DATABASE_URL --wait --no-dump-schema up --strict
 
 # Connects out to prod through the dockerized psql client (bin/psql), so db-up
 # is required to have the db container running as the client's host.
 psql-prod: db-up ## Open an interactive psql session on the production database
-	@test -f .env.prod || { echo "Missing .env.prod (copy .env.prod.example and fill in the URL)"; exit 1; }
-	@set -a; . ./.env.prod; set +a; \
-		PATH="$(CURDIR)/bin:$$PATH" psql "$$DBMATE_PROD_DATABASE_URL"
+	@DATABASE_URL="$$($(PROD_DATABASE_URL_CMD))" && \
+		PATH="$(CURDIR)/bin:$$PATH" psql "$$DATABASE_URL"
 
 db-dump-schema: db-up ## Refresh db/schema.sql from the development database
 	$(DBMATE) --url "$(DBMATE_DEV_DATABASE_URL)" dump

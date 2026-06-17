@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import subprocess
 import sys
 import time
@@ -21,12 +20,6 @@ DEFAULT_API_BASE_URL = "https://api.render.com/v1"
 BACKEND_SERVICE_NAME = "pystack-backend"
 FRONTEND_SERVICE_NAME = "pystack-frontend"
 POSTGRES_NAME = "pystack-db"
-
-ENV_VAR_SOURCE_KEYS = {
-    # The app accepts either key locally, but Render gets the explicit PYSTACK_
-    # name so the deployed environment is predictable.
-    "PYSTACK_OPENROUTER_API_KEY": ("PYSTACK_OPENROUTER_API_KEY", "OPENROUTER_API_KEY"),
-}
 
 
 class InfraError(RuntimeError):
@@ -144,7 +137,6 @@ def parse_args() -> argparse.Namespace:
             "variables, deploy changed services, and run non-mutating health checks."
         )
     )
-    parser.add_argument("--env-file", default=".env", help="Local env file to read secrets from.")
     parser.add_argument("--blueprint", default="infra/render.yaml", help="Blueprint file to validate.")
     parser.add_argument("--api-base-url", default=DEFAULT_API_BASE_URL)
     parser.add_argument("--timeout", type=int, default=900, help="Seconds to wait for deploys/health.")
@@ -179,35 +171,13 @@ def validate_blueprint(blueprint_path: Path) -> None:
     print(f"Validated {blueprint_path}")
 
 
-def load_env_file(path: Path) -> dict[str, str]:
-    if not path.exists():
-        return {}
-
-    values: dict[str, str] = {}
-    assignment = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
-    for line in path.read_text().splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        match = assignment.match(stripped)
-        if not match:
-            continue
-
-        key, raw_value = match.groups()
-        value = raw_value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-            value = value[1:-1]
-        values[key] = value
-    return values
-
-
 def render_api_key() -> str:
     if api_key := os.environ.get("RENDER_API_KEY"):
         return api_key
 
     config_path = Path(os.environ.get("RENDER_CLI_CONFIG_PATH", Path.home() / ".render" / "cli.yaml"))
     if not config_path.exists():
-        raise InfraError("Set RENDER_API_KEY or run `render login` before `make infra`.")
+        raise InfraError("Set RENDER_API_KEY or run `render login` before using Render commands.")
 
     in_api_section = False
     for line in config_path.read_text().splitlines():
@@ -223,24 +193,6 @@ def render_api_key() -> str:
                 return api_key
 
     raise InfraError("Could not read the Render API key from the Render CLI config.")
-
-
-def value_from_env(target_key: str, aliases: tuple[str, ...], env_file_values: dict[str, str]) -> str:
-    for key in aliases:
-        value = os.environ.get(key)
-        if value and value != "...":
-            return value
-
-    for key in aliases:
-        value = env_file_values.get(key)
-        if value and value != "...":
-            return value
-
-    aliases_text = ", ".join(aliases)
-    raise InfraError(
-        f"Missing {target_key}. Set one of {aliases_text} in the environment "
-        "or in the local env file."
-    )
 
 
 def reconcile_env_vars(
@@ -379,14 +331,12 @@ def main() -> int:
         sys.stdout.reconfigure(line_buffering=True)
 
     args = parse_args()
-    env_file = (ROOT / args.env_file).resolve()
     blueprint_path = (ROOT / args.blueprint).resolve()
 
     try:
         validate_blueprint(blueprint_path)
 
         client = RenderClient(render_api_key(), args.api_base_url)
-        env_file_values = load_env_file(env_file)
 
         backend = client.get_service(BACKEND_SERVICE_NAME)
         frontend = client.get_service(FRONTEND_SERVICE_NAME)
@@ -395,11 +345,6 @@ def main() -> int:
 
         backend_env = {
             "PYSTACK_CORS_ORIGINS": json.dumps([frontend.url], separators=(",", ":")),
-            "PYSTACK_OPENROUTER_API_KEY": value_from_env(
-                "PYSTACK_OPENROUTER_API_KEY",
-                ENV_VAR_SOURCE_KEYS["PYSTACK_OPENROUTER_API_KEY"],
-                env_file_values,
-            ),
         }
         frontend_env = {"VITE_API_URL": backend.url}
 
