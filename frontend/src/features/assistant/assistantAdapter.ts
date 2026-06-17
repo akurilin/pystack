@@ -6,6 +6,8 @@ import type {
 } from "@assistant-ui/react";
 import type { ReadonlyJSONObject } from "assistant-stream/utils";
 
+import { client } from "../../api/generated/client.gen";
+
 type AssistantAdapterOptions = {
   onTasksChanged: () => void | Promise<void>;
 };
@@ -34,7 +36,12 @@ export function createAssistantAdapter({
 }: AssistantAdapterOptions): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal }) {
-      const response = await fetch("/api/v1/assistant/chat", {
+      // The streaming endpoint isn't part of the generated SDK, so we fetch it
+      // by hand — but we reuse the SDK's configured baseUrl so we hit the same
+      // backend. In dev that's "" (relative, via Vite's proxy); in prod it's the
+      // absolute backend URL from VITE_API_URL set in api/config.ts.
+      const baseUrl = client.getConfig().baseUrl ?? "";
+      const response = await fetch(`${baseUrl}/api/v1/assistant/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: toRequestMessages(messages) }),
