@@ -26,9 +26,14 @@ deployment are intentionally left out.
 **Frontend**
 
 - [Vite](https://vite.dev/), [React 19](https://react.dev/), and [TypeScript](https://www.typescriptlang.org/)
+- [Tailwind CSS v4](https://tailwindcss.com/) — utility-first styling through the official Vite plugin
+- [shadcn/ui](https://ui.shadcn.com/) — Radix UI-based components vendored into `frontend/src/components/ui/`; only the components in use are kept, pull more with `npx shadcn add`
+- [Lucide](https://lucide.dev/) — icon set
+- [assistant-ui](https://www.assistant-ui.com/) — chat primitives for the optional Assistant pane
 - [Hey API](https://heyapi.dev/) — generates the typed client from the backend's exported OpenAPI schema
 - [TanStack Query](https://tanstack.com/query) — server-state management
 - [Vitest](https://vitest.dev/) and [Testing Library](https://testing-library.com/) — component tests
+- [Playwright](https://playwright.dev/) — end-to-end tests
 - [ESLint](https://eslint.org/) and [Prettier](https://prettier.io/) — linting and formatting
 
 **Tooling**
