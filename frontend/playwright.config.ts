@@ -8,7 +8,8 @@ import { defineConfig, devices } from "@playwright/test";
 // Playwright then starts (or reuses) both dev servers below.
 export default defineConfig({
   testDir: "./e2e",
-  // Fetches a Clerk testing token before the suite (no-op without Clerk keys).
+  // Validates required Clerk env vars and fetches a Clerk testing token before
+  // the suite; fails fast with a clear message if anything is missing.
   globalSetup: "./e2e/global-setup.ts",
   // Test artifacts (traces, screenshots) are ephemeral; keep them out of the
   // repo. The list reporter prints results to stdout, so nothing else is

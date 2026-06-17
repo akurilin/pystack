@@ -1,28 +1,13 @@
 import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 import { expect, test } from "@playwright/test";
 
-// Credentials for a Clerk dev-instance test user. The whole product is behind
-// auth, so e2e must sign in first. When these (and the CLERK_* keys used by
-// global setup) are unset, the spec skips rather than failing.
-const username = process.env.E2E_CLERK_USER_USERNAME;
-const password = process.env.E2E_CLERK_USER_PASSWORD;
+// Credentials for a Clerk dev-instance test user. global-setup.ts guarantees
+// these are set (failing the suite with a clear message otherwise), so the test
+// can use them directly.
+const username = process.env.E2E_CLERK_USER_USERNAME!;
+const password = process.env.E2E_CLERK_USER_PASSWORD!;
 
 test("creates and removes a task on the board", async ({ page }) => {
-  if (!username || !password) {
-    // Locally we skip when Clerk creds aren't configured, but in CI we fail hard
-    // so a misconfigured pipeline can't stay green while silently never
-    // exercising the authenticated flow.
-    test.skip(
-      !process.env.CI,
-      "Set CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, E2E_CLERK_USER_USERNAME, and " +
-        "E2E_CLERK_USER_PASSWORD to run the authenticated board flow.",
-    );
-    throw new Error(
-      "E2E Clerk credentials (E2E_CLERK_USER_USERNAME / E2E_CLERK_USER_PASSWORD) " +
-        "are required in CI but were not set.",
-    );
-  }
-
   // A unique title keeps the test idempotent against the shared dev database.
   const title = `Playwright smoke ${Date.now()}`;
 
