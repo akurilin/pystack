@@ -12,7 +12,8 @@ DBMATE_TEST_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_te
 
 .PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
-	db-reset-test db-status db-dump-schema db-seed generate-api api frontend dev \
+	db-reset-test db-status db-status-prod db-migrate-prod db-dump-schema db-seed \
+	generate-api api frontend dev \
 	test test-backend test-frontend test-e2e lint format check-format typecheck build \
 	check-generated check-db-schema check-secrets pre-commit-install pre-commit check
 
@@ -73,6 +74,20 @@ db-status: db-up ## Show migration status for development and test databases
 	@echo
 	@echo "Test database:"
 	@$(DBMATE) --url "$(DBMATE_TEST_DATABASE_URL)" --no-dump-schema status
+
+# Production migrations read their URL from .env.prod (gitignored) so the
+# credential never lands in the Makefile or git. There is intentionally no
+# prod reset/drop target: the destructive db-reset-* flow can never reach prod.
+# --no-dump-schema keeps a prod run from rewriting the local db/schema.sql.
+db-status-prod: ## Show migration status for the production database
+	@test -f .env.prod || { echo "Missing .env.prod (copy .env.prod.example and fill in the URL)"; exit 1; }
+	@set -a; . ./.env.prod; set +a; \
+		$(DBMATE) --url "$$DBMATE_PROD_DATABASE_URL" --no-dump-schema status
+
+db-migrate-prod: ## Apply pending migrations to the production database
+	@test -f .env.prod || { echo "Missing .env.prod (copy .env.prod.example and fill in the URL)"; exit 1; }
+	set -a; . ./.env.prod; set +a; \
+		$(DBMATE) --url "$$DBMATE_PROD_DATABASE_URL" --wait --no-dump-schema up --strict
 
 db-dump-schema: db-up ## Refresh db/schema.sql from the development database
 	$(DBMATE) --url "$(DBMATE_DEV_DATABASE_URL)" dump
