@@ -6,6 +6,8 @@
 
 ## Commits
 
+- Work in main unless asked otherwise
+- Commit or push only when asked to
 - Keep commits focused around one coherent theme.
 - Commit lockfiles and intentionally versioned generated artifacts, including the
   frontend API client, when their source inputs change.
