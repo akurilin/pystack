@@ -52,16 +52,18 @@ export function Board() {
   const queryClient = useQueryClient();
   const tasksQuery = useQuery(listTasksOptions());
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
-  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  // Which column's create form is open, if any. Only one is open at a time.
+  const [openCreateColumn, setOpenCreateColumn] = useState<TaskStatus | null>(
+    null,
+  );
 
   const refreshTasks = async () => {
     await queryClient.invalidateQueries({ queryKey: listTasksQueryKey() });
   };
 
-  const createTask = useMutation({
-    ...createTaskMutation(),
-    onSuccess: refreshTasks,
-  });
+  // The API always creates tasks at the bottom of the backlog, so a task added
+  // from another column is moved into place once the create succeeds.
+  const createTask = useMutation(createTaskMutation());
   const updateTask = useMutation({
     ...updateTaskMutation(),
     onSuccess: refreshTasks,
@@ -87,6 +89,31 @@ export function Board() {
       body: { status, position },
       path: { task_id: taskId },
     });
+  };
+
+  const createInColumn = (
+    status: TaskStatus,
+    title: string,
+    description: string,
+  ) => {
+    createTask.mutate(
+      { body: { title, description } },
+      {
+        onSuccess: (created) => {
+          setOpenCreateColumn(null);
+          if (status === "backlog") {
+            void refreshTasks();
+            return;
+          }
+          // Relocate the freshly created backlog task to the chosen column,
+          // appended after whatever it already holds.
+          const position = tasks.filter(
+            (task) => task.status === status,
+          ).length;
+          move(created.id, status, position);
+        },
+      },
+    );
   };
 
   // Dropping on a card inserts at that card's position; dropping on the column's
@@ -134,8 +161,7 @@ export function Board() {
           const columnTasks = tasks
             .filter((task) => task.status === column.status)
             .sort((left, right) => left.position - right.position);
-          const showCreateTaskForm =
-            column.status === "backlog" && isCreateTaskOpen;
+          const showCreateTaskForm = openCreateColumn === column.status;
 
           return (
             <section
@@ -181,12 +207,9 @@ export function Board() {
                 {showCreateTaskForm && (
                   <CreateTaskForm
                     isPending={createTask.isPending}
-                    onCancel={() => setIsCreateTaskOpen(false)}
+                    onCancel={() => setOpenCreateColumn(null)}
                     onCreate={(title, description) =>
-                      createTask.mutate(
-                        { body: { title, description } },
-                        { onSuccess: () => setIsCreateTaskOpen(false) },
-                      )
+                      createInColumn(column.status, title, description)
                     }
                   />
                 )}
@@ -195,10 +218,10 @@ export function Board() {
                     Drop a task here
                   </p>
                 )}
-                {column.status === "backlog" && !showCreateTaskForm && (
+                {!showCreateTaskForm && (
                   <Button
                     className="h-auto w-full justify-start px-2 py-2 text-muted-foreground"
-                    onClick={() => setIsCreateTaskOpen(true)}
+                    onClick={() => setOpenCreateColumn(column.status)}
                     type="button"
                     variant="ghost"
                   >
