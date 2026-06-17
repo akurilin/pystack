@@ -22,6 +22,10 @@
 ## Database
 
 
+## Testing
+
+- Avoid writing tests that are ceremony rather than signal. More tests is not
+  better if you're barely getting value out of them.
 
 ## Infrastructure
 
