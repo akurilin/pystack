@@ -23,7 +23,7 @@ check-tools: ## Verify required machine-level tools are installed
 	@for tool in uv node npm docker dbmate gitleaks; do \
 		command -v $$tool >/dev/null || { echo "Missing required tool: $$tool"; exit 1; }; \
 	done
-	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 22 || (major === 22 && minor < 18)) { console.error(`Node 22.18+ is required; found $${process.versions.node}`); process.exit(1); }'
+	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 24 || (major === 24 && minor < 16)) { console.error(`Node 24.16+ is required; found $${process.versions.node}`); process.exit(1); }'
 	@$(COMPOSE) version >/dev/null
 
 setup: check-tools backend-sync frontend-install pre-commit-install db-up db-migrate db-seed generate-api ## Set up a new development checkout

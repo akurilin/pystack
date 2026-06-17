@@ -66,7 +66,7 @@ Install these machine-level tools:
 - [uv](https://docs.astral.sh/uv/)
 - [DBmate](https://github.com/amacneil/dbmate)
 - [Gitleaks](https://github.com/gitleaks/gitleaks)
-- Node.js 22.18+ and npm
+- Node.js 24.16.0 (LTS; see `.node-version`) and npm
 - Docker with Docker Compose
 - Make
 
