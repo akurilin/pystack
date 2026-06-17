@@ -21,10 +21,12 @@ services:
         fromDatabase:
           name: pystack-db
           property: connectionString
+      # Allow both the onrender URL and the custom domain the frontend is served
+      # from. render_infra.py reconciles these to the same value on `make infra`.
       - key: PYSTACK_CORS_ORIGINS
-        value: '["https://pystack-frontend.onrender.com"]'
+        value: '["https://pystack-frontend.onrender.com","https://pystack.kuril.in"]'
       - key: PYSTACK_CLERK_AUTHORIZED_PARTIES
-        value: '["https://pystack-frontend.onrender.com"]'
+        value: '["https://pystack-frontend.onrender.com","https://pystack.kuril.in"]'
       - key: PYSTACK_OPENROUTER_API_KEY
         sync: false
       - key: PYSTACK_CLERK_SECRET_KEY
@@ -45,9 +47,12 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+    # Custom domain (CNAME onto this static site) the app is served from.
+    domains:
+      - pystack.kuril.in
     envVars:
       - key: VITE_API_URL
-        value: https://pystack.onrender.com
+        value: https://pystack-backend.onrender.com
       # Build-time publishable key (safe to expose in the bundle). Use the Clerk
       # production instance's pk_live_ key here.
       - key: VITE_CLERK_PUBLISHABLE_KEY

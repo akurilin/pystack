@@ -20,6 +20,13 @@ BACKEND_SERVICE_NAME = "pystack-backend"
 FRONTEND_SERVICE_NAME = "pystack-frontend"
 POSTGRES_NAME = "pystack-db"
 
+# The production frontend is served from its onrender.com URL and this custom
+# domain (a CNAME onto the Render static site). Browser requests and Clerk session
+# tokens originate from both, so both must be allowed for CORS and accepted as
+# Clerk authorized parties. The onrender URL is discovered from Render at runtime;
+# this one is fixed, so it lives here as a literal.
+FRONTEND_CUSTOM_ORIGIN = "https://pystack.kuril.in"
+
 
 class InfraError(RuntimeError):
     pass
@@ -379,11 +386,16 @@ def main() -> int:
         print(f"Discovered {backend.name}: {backend.url}")
         print(f"Discovered {frontend.name}: {frontend.url}")
 
+        # Allow both the discovered onrender URL and the custom domain the app is
+        # actually served from.
+        frontend_origins = [frontend.url, FRONTEND_CUSTOM_ORIGIN]
         backend_env = {
-            "PYSTACK_CORS_ORIGINS": json.dumps([frontend.url], separators=(",", ":")),
-            # Clerk verifies session tokens were minted for the real frontend
-            # origin; keep it in lockstep with the discovered URL like CORS.
-            "PYSTACK_CLERK_AUTHORIZED_PARTIES": json.dumps([frontend.url], separators=(",", ":")),
+            "PYSTACK_CORS_ORIGINS": json.dumps(frontend_origins, separators=(",", ":")),
+            # Clerk verifies session tokens were minted for an allowed frontend
+            # origin; keep it in lockstep with the CORS allowlist.
+            "PYSTACK_CLERK_AUTHORIZED_PARTIES": json.dumps(
+                frontend_origins, separators=(",", ":")
+            ),
         }
         frontend_env = {"VITE_API_URL": backend.url}
 
