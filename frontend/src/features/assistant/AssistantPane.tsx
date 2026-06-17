@@ -10,9 +10,13 @@ import {
   useMessage,
 } from "@assistant-ui/react";
 import { useQueryClient } from "@tanstack/react-query";
+import { Bot, Send, Square, Wrench } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { listTasksQueryKey } from "../../api/generated/@tanstack/react-query.gen";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { createAssistantAdapter } from "./assistantAdapter";
 
 export function AssistantPane() {
@@ -27,11 +31,16 @@ export function AssistantPane() {
   const runtime = useLocalRuntime(adapter);
 
   return (
-    <aside className="assistant-pane" aria-label="Task assistant">
-      <header className="assistant-pane__header">
+    <aside
+      className="grid h-full min-h-[68vh] grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-xl border border-border bg-card/90"
+      aria-label="Task assistant"
+    >
+      <header className="border-b border-border/80 p-4">
         <div>
-          <p className="eyebrow">Board assistant</p>
-          <h2>Ask the agent</h2>
+          <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+            Board assistant
+          </p>
+          <h2 className="text-base font-semibold">Ask the agent</h2>
         </div>
       </header>
       <AssistantRuntimeProvider runtime={runtime}>
@@ -43,15 +52,15 @@ export function AssistantPane() {
 
 function AssistantThread() {
   return (
-    <ThreadPrimitive.Root className="assistant-thread">
-      <ThreadPrimitive.Viewport className="assistant-thread__viewport">
+    <ThreadPrimitive.Root className="min-h-0">
+      <ThreadPrimitive.Viewport className="flex h-full flex-col overflow-y-auto p-4">
         <AssistantEmptyState />
-        <div className="assistant-messages">
+        <div className="grid flex-1 content-end gap-3">
           <ThreadPrimitive.Messages>
             {() => <AssistantMessage />}
           </ThreadPrimitive.Messages>
         </div>
-        <ThreadPrimitive.ViewportFooter className="assistant-thread__footer">
+        <ThreadPrimitive.ViewportFooter className="sticky bottom-0 -mx-4 -mb-4 mt-4 border-t border-border/80 bg-card p-4">
           <Composer />
         </ThreadPrimitive.ViewportFooter>
       </ThreadPrimitive.Viewport>
@@ -66,8 +75,11 @@ function AssistantEmptyState() {
   }
 
   return (
-    <div className="assistant-welcome">
-      <h3>Ready</h3>
+    <div className="grid min-h-40 place-items-center text-muted-foreground">
+      <div className="grid justify-items-center gap-2">
+        <Bot className="size-5" />
+        <h3 className="text-sm font-semibold">Ready</h3>
+      </div>
     </div>
   );
 }
@@ -77,7 +89,10 @@ function AssistantMessage() {
 
   return (
     <MessagePrimitive.Root
-      className={`assistant-message assistant-message--${role}`}
+      className={cn(
+        "grid max-w-[92%] gap-2 [overflow-wrap:anywhere]",
+        role === "user" ? "justify-self-end" : "justify-self-start",
+      )}
     >
       <MessagePrimitive.Parts
         components={{
@@ -90,7 +105,20 @@ function AssistantMessage() {
 }
 
 function AssistantTextPart({ text }: TextMessagePartProps) {
-  return <p>{text}</p>;
+  const role = useMessage((message) => message.role);
+
+  return (
+    <p
+      className={cn(
+        "m-0 whitespace-pre-wrap rounded-lg border px-3 py-2 text-sm leading-6",
+        role === "user"
+          ? "border-emerald-500/25 bg-emerald-500/10 text-foreground"
+          : "border-border bg-muted/50 text-foreground",
+      )}
+    >
+      {text}
+    </p>
+  );
 }
 
 function AssistantToolPart({
@@ -100,14 +128,24 @@ function AssistantToolPart({
   isError,
 }: ToolCallMessagePartProps<Record<string, unknown>, unknown>) {
   return (
-    <div className={`assistant-tool ${isError ? "assistant-tool--error" : ""}`}>
-      <div className="assistant-tool__header">
-        <span>{toolLabel(toolName)}</span>
-        <span>
-          {result === undefined ? "Running" : isError ? "Failed" : "Done"}
+    <div
+      className={cn(
+        "grid gap-2 rounded-lg border bg-background/50 p-3",
+        isError ? "border-destructive/50" : "border-border",
+      )}
+    >
+      <div className="flex items-center justify-between gap-3 text-xs font-semibold uppercase text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <Wrench className="size-3" />
+          {toolLabel(toolName)}
         </span>
+        <Badge variant={isError ? "destructive" : "outline"}>
+          {result === undefined ? "Running" : isError ? "Failed" : "Done"}
+        </Badge>
       </div>
-      <pre>{JSON.stringify(result ?? args, null, 2)}</pre>
+      <pre className="m-0 max-h-48 overflow-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+        {JSON.stringify(result ?? args, null, 2)}
+      </pre>
     </div>
   );
 }
@@ -116,25 +154,27 @@ function Composer() {
   const isRunning = useAuiState((state) => state.thread.isRunning);
 
   return (
-    <ComposerPrimitive.Root className="assistant-composer">
+    <ComposerPrimitive.Root className="grid gap-3">
       <ComposerPrimitive.Input
         aria-label="Message the board assistant"
-        className="assistant-composer__input"
+        className="min-h-20 w-full resize-y rounded-lg border border-input bg-background/70 px-3 py-2 text-sm outline-none transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
         placeholder="Message the assistant"
         rows={2}
       />
-      <div className="assistant-composer__actions">
+      <div className="flex justify-end">
         {isRunning ? (
           <ComposerPrimitive.Cancel asChild>
-            <button className="primary-button" type="button">
+            <Button type="button" variant="destructive">
+              <Square data-icon="inline-start" />
               Stop
-            </button>
+            </Button>
           </ComposerPrimitive.Cancel>
         ) : (
           <ComposerPrimitive.Send asChild>
-            <button className="primary-button" type="button">
+            <Button type="button">
+              <Send data-icon="inline-start" />
               Send
-            </button>
+            </Button>
           </ComposerPrimitive.Send>
         )}
       </div>

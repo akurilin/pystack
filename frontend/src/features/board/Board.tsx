@@ -1,6 +1,23 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FormEvent, useState } from "react";
+import {
+  CircleAlert,
+  GripHorizontal,
+  LoaderCircle,
+  Pencil,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
 
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   createTaskMutation,
   deleteTaskMutation,
@@ -22,6 +39,14 @@ const COLUMNS: ReadonlyArray<{
   { status: "review", label: "Review", marker: "04" },
   { status: "done", label: "Done", marker: "05" },
 ];
+
+const STATUS_MARKER_CLASSES: Record<TaskStatus, string> = {
+  backlog: "bg-sky-500/10 text-sky-300 ring-sky-500/25",
+  ready: "bg-violet-500/10 text-violet-300 ring-violet-500/25",
+  in_progress: "bg-amber-500/10 text-amber-300 ring-amber-500/25",
+  review: "bg-rose-500/10 text-rose-300 ring-rose-500/25",
+  done: "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25",
+};
 
 export function Board() {
   const queryClient = useQueryClient();
@@ -74,25 +99,37 @@ export function Board() {
   };
 
   if (tasksQuery.isPending) {
-    return <p className="state-message">Loading board...</p>;
+    return (
+      <Alert className="bg-card/80">
+        <LoaderCircle className="animate-spin" />
+        <AlertDescription>Loading board...</AlertDescription>
+      </Alert>
+    );
   }
 
   if (tasksQuery.isError) {
     return (
-      <p className="state-message state-message--error">
-        The board could not be loaded.
-      </p>
+      <Alert variant="destructive">
+        <CircleAlert />
+        <AlertDescription>The board could not be loaded.</AlertDescription>
+      </Alert>
     );
   }
 
   return (
-    <>
+    <div className="grid min-w-0 gap-3">
       {mutationFailed && (
-        <p className="state-message state-message--error" role="alert">
-          That change could not be saved. Please try again.
-        </p>
+        <Alert variant="destructive">
+          <CircleAlert />
+          <AlertDescription>
+            That change could not be saved. Please try again.
+          </AlertDescription>
+        </Alert>
       )}
-      <section className="board" aria-label="Task board">
+      <section
+        aria-label="Task board"
+        className="grid min-w-0 grid-cols-[repeat(5,minmax(11.5rem,1fr))] gap-3 overflow-x-auto pb-4 max-[900px]:grid-cols-[repeat(5,minmax(280px,82vw))]"
+      >
         {COLUMNS.map((column) => {
           const columnTasks = tasks
             .filter((task) => task.status === column.status)
@@ -102,18 +139,27 @@ export function Board() {
 
           return (
             <section
-              className={`board-column board-column--${column.status}`}
+              className="min-h-[65vh] rounded-xl border border-border/80 bg-card/85 p-3 shadow-2xl shadow-black/15"
               key={column.status}
               onDragOver={(event) => event.preventDefault()}
               onDrop={() => dropTask(column.status, columnTasks.length)}
             >
-              <header className="column-header">
-                <span className="column-marker">{column.marker}</span>
-                <h2>{column.label}</h2>
-                <span className="task-count">{columnTasks.length}</span>
+              <header className="mb-3 grid grid-cols-[auto_1fr_auto] items-center gap-3 border-b border-border/70 px-1 pb-3">
+                <span
+                  className={cn(
+                    "grid size-7 place-items-center rounded-full text-[0.68rem] font-semibold ring-1",
+                    STATUS_MARKER_CLASSES[column.status],
+                  )}
+                >
+                  {column.marker}
+                </span>
+                <h2 className="text-xs font-semibold uppercase text-foreground">
+                  {column.label}
+                </h2>
+                <Badge variant="outline">{columnTasks.length}</Badge>
               </header>
 
-              <div className="task-list">
+              <div className="grid min-h-32 content-start gap-3">
                 {columnTasks.map((task, position) => (
                   <TaskCard
                     key={task.id}
@@ -145,24 +191,27 @@ export function Board() {
                   />
                 )}
                 {columnTasks.length === 0 && !showCreateTaskForm && (
-                  <p className="empty-column">Drop a task here</p>
+                  <p className="rounded-lg border border-dashed border-border/80 px-3 py-6 text-center text-xs text-muted-foreground">
+                    Drop a task here
+                  </p>
                 )}
                 {column.status === "backlog" && !showCreateTaskForm && (
-                  <button
-                    className="add-task-button"
+                  <Button
+                    className="h-auto w-full justify-start px-2 py-2 text-muted-foreground"
                     onClick={() => setIsCreateTaskOpen(true)}
                     type="button"
+                    variant="ghost"
                   >
-                    <span aria-hidden="true">+</span>
+                    <Plus data-icon="inline-start" />
                     Add task
-                  </button>
+                  </Button>
                 )}
               </div>
             </section>
           );
         })}
       </section>
-    </>
+    </div>
   );
 }
 
@@ -189,35 +238,54 @@ function CreateTaskForm({
   };
 
   return (
-    <form className="create-task" onSubmit={submit}>
-      <label>
-        <span>Task title</span>
-        <input
+    <form
+      aria-label="Create task"
+      className="grid gap-3 rounded-xl border border-border bg-card/90 p-3"
+      onSubmit={submit}
+    >
+      <div className="grid gap-1.5">
+        <Label className="text-xs font-semibold uppercase" htmlFor="task-title">
+          Task title
+        </Label>
+        <Input
           autoFocus
+          id="task-title"
           maxLength={200}
           onChange={(event) => setTitle(event.target.value)}
           placeholder="What needs doing?"
           required
           value={title}
         />
-      </label>
-      <label>
-        <span>Description</span>
-        <textarea
+      </div>
+      <div className="grid gap-1.5">
+        <Label
+          className="text-xs font-semibold uppercase"
+          htmlFor="task-description"
+        >
+          Description
+        </Label>
+        <Textarea
+          id="task-description"
           maxLength={5000}
           onChange={(event) => setDescription(event.target.value)}
           placeholder="Add useful context"
           rows={2}
           value={description}
         />
-      </label>
-      <div className="create-task__actions">
-        <button className="primary-button" disabled={isPending} type="submit">
+      </div>
+      <div className="flex gap-2">
+        <Button disabled={isPending} type="submit">
+          {isPending ? (
+            <LoaderCircle className="animate-spin" data-icon="inline-start" />
+          ) : (
+            <Plus data-icon="inline-start" />
+          )}
           {isPending ? "Adding..." : "Add task"}
-        </button>
-        <button className="text-button" onClick={onCancel} type="button">
+        </Button>
+        <Button onClick={onCancel} type="button" variant="outline">
+          <X data-icon="inline-start" />
           Cancel
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -252,38 +320,56 @@ function TaskCard({
 
   if (isEditing) {
     return (
-      <form className="task-card task-card--editing" onSubmit={submit}>
-        <label>
-          <span>Task title</span>
-          <input
+      <form
+        aria-label={`Edit ${task.title}`}
+        className="grid gap-3 rounded-xl border border-border bg-card p-3 shadow-lg shadow-black/10"
+        onSubmit={submit}
+      >
+        <div className="grid gap-1.5">
+          <Label
+            className="text-xs font-semibold uppercase"
+            htmlFor={`task-title-${task.id}`}
+          >
+            Task title
+          </Label>
+          <Input
             aria-label={`Title for ${task.title}`}
+            id={`task-title-${task.id}`}
             maxLength={200}
             onChange={(event) => setTitle(event.target.value)}
             required
             value={title}
           />
-        </label>
-        <label>
-          <span>Description</span>
-          <textarea
+        </div>
+        <div className="grid gap-1.5">
+          <Label
+            className="text-xs font-semibold uppercase"
+            htmlFor={`task-description-${task.id}`}
+          >
+            Description
+          </Label>
+          <Textarea
             aria-label={`Description for ${task.title}`}
+            id={`task-description-${task.id}`}
             maxLength={5000}
             onChange={(event) => setDescription(event.target.value)}
             rows={3}
             value={description}
           />
-        </label>
-        <div className="card-actions">
-          <button className="primary-button" disabled={isPending} type="submit">
+        </div>
+        <div className="flex gap-2">
+          <Button disabled={isPending} type="submit">
+            <Save data-icon="inline-start" />
             Save
-          </button>
-          <button
-            className="text-button"
+          </Button>
+          <Button
             onClick={() => setIsEditing(false)}
             type="button"
+            variant="outline"
           >
+            <X data-icon="inline-start" />
             Cancel
-          </button>
+          </Button>
         </div>
       </form>
     );
@@ -291,7 +377,8 @@ function TaskCard({
 
   return (
     <article
-      className="task-card"
+      aria-label={`Task ${task.title}`}
+      className="grid cursor-grab gap-3 rounded-xl border border-border bg-card p-3 shadow-lg shadow-black/10 active:cursor-grabbing"
       draggable
       onDragOver={(event) => event.preventDefault()}
       onDragStart={onDragStart}
@@ -301,26 +388,42 @@ function TaskCard({
         onDrop();
       }}
     >
-      <div className="task-card__grabber" aria-hidden="true">
+      <div
+        className="flex items-center gap-1 text-[0.65rem] font-semibold uppercase text-muted-foreground"
+        aria-hidden="true"
+      >
+        <GripHorizontal className="size-3" />
         Drag
       </div>
-      <h3>{task.title}</h3>
-      {task.description !== "" && <p>{task.description}</p>}
-      <div className="card-actions">
-        <button
-          className="text-button"
+      <h3 className="text-sm leading-5 font-medium text-foreground">
+        {task.title}
+      </h3>
+      {task.description !== "" && (
+        <p className="text-xs leading-5 text-muted-foreground">
+          {task.description}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button
           onClick={() => setIsEditing(true)}
+          size="xs"
           type="button"
+          variant="outline"
         >
+          <Pencil data-icon="inline-start" />
           Edit
-        </button>
-        <button
-          className="text-button text-button--danger"
+        </Button>
+        <Button
+          className="ml-auto"
+          disabled={isPending}
           onClick={onDelete}
+          size="xs"
           type="button"
+          variant="destructive"
         >
+          <Trash2 data-icon="inline-start" />
           Delete
-        </button>
+        </Button>
       </div>
     </article>
   );

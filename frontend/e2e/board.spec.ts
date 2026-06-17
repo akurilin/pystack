@@ -13,13 +13,13 @@ test("creates and removes a task on the board", async ({ page }) => {
   await expect(page.getByPlaceholder("What needs doing?")).toHaveCount(0);
   await page.getByRole("button", { name: "Add task" }).click();
 
-  const createForm = page.locator("form.create-task");
+  const createForm = page.getByRole("form", { name: "Create task" });
   await expect(createForm.getByPlaceholder("What needs doing?")).toBeVisible();
   await createForm.getByPlaceholder("What needs doing?").fill(title);
   await createForm.getByRole("button", { name: "Add task" }).click();
 
   // The new card appears on the board.
-  const card = page.locator("article.task-card").filter({ hasText: title });
+  const card = page.getByRole("article", { name: `Task ${title}` });
   await expect(card).toBeVisible();
 
   // Remove it so the run leaves the database as it found it.

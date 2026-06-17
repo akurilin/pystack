@@ -1,81 +1,108 @@
-import { PointerEvent, useState } from "react";
+import { PanelRightClose, PanelRightOpen } from "lucide-react";
+import { useEffect, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { AssistantPane } from "./features/assistant/AssistantPane";
 import { Board } from "./features/board/Board";
 
-const MIN_ASSISTANT_WIDTH = 320;
-const MAX_ASSISTANT_WIDTH = 620;
-const DEFAULT_ASSISTANT_WIDTH = 420;
-
 export function App() {
   const [assistantOpen, setAssistantOpen] = useState(true);
-  const [assistantWidth, setAssistantWidth] = useState(DEFAULT_ASSISTANT_WIDTH);
+  const [isNarrow, setIsNarrow] = useState(false);
 
-  const startResize = (event: PointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    const pointerId = event.pointerId;
-    const handle = event.currentTarget;
-    handle.setPointerCapture(pointerId);
+  useEffect(() => {
+    if (!("matchMedia" in window)) {
+      return;
+    }
 
-    const resize = (moveEvent: globalThis.PointerEvent) => {
-      const viewportWidth = window.innerWidth;
-      const nextWidth = viewportWidth - moveEvent.clientX;
-      setAssistantWidth(
-        Math.min(MAX_ASSISTANT_WIDTH, Math.max(MIN_ASSISTANT_WIDTH, nextWidth)),
-      );
-    };
+    const media = window.matchMedia("(max-width: 900px)");
+    const updateLayout = () => setIsNarrow(media.matches);
+    updateLayout();
+    media.addEventListener("change", updateLayout);
 
-    const stopResize = () => {
-      handle.releasePointerCapture(pointerId);
-      window.removeEventListener("pointermove", resize);
-      window.removeEventListener("pointerup", stopResize);
-    };
+    return () => media.removeEventListener("change", updateLayout);
+  }, []);
 
-    window.addEventListener("pointermove", resize);
-    window.addEventListener("pointerup", stopResize);
-  };
+  const ToggleIcon = assistantOpen ? PanelRightClose : PanelRightOpen;
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <div>
-          <p className="eyebrow">Pystack smoke test</p>
-          <h1>Product launch board</h1>
-        </div>
-        <div className="header-actions">
-          <p className="header-note">
-            Drag tasks between columns or use the arrow controls.
-          </p>
-          <button
-            className="assistant-toggle"
-            onClick={() => setAssistantOpen((isOpen) => !isOpen)}
-            type="button"
-          >
-            {assistantOpen ? "Hide assistant" : "Show assistant"}
-          </button>
-        </div>
-      </header>
-      <div className="workspace">
-        <section className="board-workspace" aria-label="Board workspace">
-          <Board />
-        </section>
-        {assistantOpen && (
-          <>
-            <button
-              aria-label="Resize assistant pane"
-              className="assistant-resize-handle"
-              onPointerDown={startResize}
-              type="button"
-            />
-            <div
-              className="assistant-pane-wrap"
-              style={{ width: assistantWidth }}
-            >
-              <AssistantPane />
+    <TooltipProvider>
+      <main className="min-h-screen px-4 py-8 text-foreground sm:px-6 lg:px-8">
+        <div className="mx-auto flex w-full max-w-[1800px] flex-col gap-8">
+          <header className="flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
+            <div className="min-w-0">
+              <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+                Pystack smoke test
+              </p>
+              <h1 className="text-4xl leading-none font-semibold text-balance sm:text-6xl lg:text-7xl">
+                Product launch board
+              </h1>
             </div>
-          </>
-        )}
-      </div>
-    </main>
+            <div className="flex items-center gap-3 max-[900px]:w-full max-[900px]:flex-col max-[900px]:items-start">
+              <p className="max-w-md text-sm leading-6 text-muted-foreground">
+                Drag tasks between columns or use the card controls.
+              </p>
+              <Button
+                className="max-[900px]:w-full"
+                onClick={() => setAssistantOpen((isOpen) => !isOpen)}
+                type="button"
+                variant="outline"
+              >
+                <ToggleIcon data-icon="inline-start" />
+                {assistantOpen ? "Hide assistant" : "Show assistant"}
+              </Button>
+            </div>
+          </header>
+
+          {isNarrow ? (
+            <div className="grid gap-3">
+              <section aria-label="Board workspace" className="min-w-0">
+                <Board />
+              </section>
+              {assistantOpen && <AssistantPane />}
+            </div>
+          ) : (
+            <ResizablePanelGroup
+              className="min-h-[68vh] min-w-0 gap-3"
+              orientation="horizontal"
+            >
+              <ResizablePanel
+                className="min-w-0 overflow-hidden"
+                defaultSize={assistantOpen ? "72%" : "100%"}
+                minSize="35%"
+              >
+                <section
+                  aria-label="Board workspace"
+                  className="h-full min-w-0"
+                >
+                  <Board />
+                </section>
+              </ResizablePanel>
+              {assistantOpen && (
+                <>
+                  <ResizableHandle
+                    className="rounded-full bg-border/70 transition-colors hover:bg-primary/60 focus-visible:bg-primary/60"
+                    withHandle
+                  />
+                  <ResizablePanel
+                    className="min-w-0"
+                    defaultSize="28%"
+                    maxSize="38.75rem"
+                    minSize="20rem"
+                  >
+                    <AssistantPane />
+                  </ResizablePanel>
+                </>
+              )}
+            </ResizablePanelGroup>
+          )}
+        </div>
+      </main>
+    </TooltipProvider>
   );
 }
