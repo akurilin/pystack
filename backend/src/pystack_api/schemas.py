@@ -6,6 +6,11 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 
+class HealthStatus(BaseModel):
+    status: Literal["ok", "error"]
+    database: Literal["up", "down"]
+
+
 class TaskStatus(StrEnum):
     BACKLOG = "backlog"
     READY = "ready"

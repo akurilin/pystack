@@ -7,8 +7,10 @@ from fastapi.responses import StreamingResponse
 
 from pystack_api.api.dependencies import ConnectionDependency
 from pystack_api.core.config import Settings
+from pystack_api.db.connection import DatabasePool
 from pystack_api.schemas import (
     AssistantChatRequest,
+    HealthStatus,
     TaskCreate,
     TaskMove,
     TaskRead,
@@ -20,9 +22,23 @@ from pystack_api.services import tasks as task_service
 api_router = APIRouter()
 
 
-@api_router.get("/health", operation_id="getHealth", tags=["health"])
-def get_health() -> dict[str, str]:
-    return {"status": "ok"}
+@api_router.get("/health", operation_id="getHealth", response_model=HealthStatus, tags=["health"])
+def get_health(request: Request, response: Response) -> HealthStatus:
+    """Readiness check: confirm the database is reachable with a trivial query.
+
+    Reports 503 when the database is unreachable so load balancers and
+    orchestrators route traffic away. We go through the pool directly rather than
+    the connection dependency so a connection failure becomes a clean 503 here
+    instead of a 500 raised during dependency resolution.
+    """
+    pool = cast(DatabasePool, request.app.state.database_pool)
+    try:
+        with pool.connection() as connection:
+            connection.execute("SELECT 1")
+    except Exception:  # noqa: BLE001 — any failure means the DB is not ready.
+        response.status_code = HTTPStatus.SERVICE_UNAVAILABLE
+        return HealthStatus(status="error", database="down")
+    return HealthStatus(status="ok", database="up")
 
 
 @api_router.get("/tasks", operation_id="listTasks", response_model=list[TaskRead], tags=["tasks"])

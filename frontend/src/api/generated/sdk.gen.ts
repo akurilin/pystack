@@ -20,6 +20,13 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
 
 /**
  * Get Health
+ *
+ * Readiness check: confirm the database is reachable with a trivial query.
+ *
+ * Reports 503 when the database is unreachable so load balancers and
+ * orchestrators route traffic away. We go through the pool directly rather than
+ * the connection dependency so a connection failure becomes a clean 503 here
+ * instead of a 500 raised during dependency resolution.
  */
 export const getHealth = <ThrowOnError extends boolean = false>(options?: Options<GetHealthData, ThrowOnError>): RequestResult<GetHealthResponses, unknown, ThrowOnError> => (options?.client ?? client).get<GetHealthResponses, unknown, ThrowOnError>({ url: '/api/v1/health', ...options });
 

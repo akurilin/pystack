@@ -39,6 +39,20 @@ export type HttpValidationError = {
 };
 
 /**
+ * HealthStatus
+ */
+export type HealthStatus = {
+    /**
+     * Status
+     */
+    status: 'ok' | 'error';
+    /**
+     * Database
+     */
+    database: 'up' | 'down';
+};
+
+/**
  * TaskCreate
  */
 export type TaskCreate = {
@@ -150,13 +164,9 @@ export type GetHealthData = {
 
 export type GetHealthResponses = {
     /**
-     * Response Gethealth
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: string;
-    };
+    200: HealthStatus;
 };
 
 export type GetHealthResponse = GetHealthResponses[keyof GetHealthResponses];

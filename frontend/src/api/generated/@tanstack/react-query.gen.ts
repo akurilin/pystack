@@ -43,6 +43,13 @@ export const getHealthQueryKey = (options?: Options<GetHealthData>) => createQue
 
 /**
  * Get Health
+ *
+ * Readiness check: confirm the database is reachable with a trivial query.
+ *
+ * Reports 503 when the database is unreachable so load balancers and
+ * orchestrators route traffic away. We go through the pool directly rather than
+ * the connection dependency so a connection failure becomes a clean 503 here
+ * instead of a 500 raised during dependency resolution.
  */
 export const getHealthOptions = (options?: Options<GetHealthData>) => queryOptions<GetHealthResponse, DefaultError, GetHealthResponse, ReturnType<typeof getHealthQueryKey>>({
     queryFn: async ({ queryKey, signal }) => {
