@@ -63,10 +63,11 @@ ALTER TABLE ONLY public.tasks
 
 
 --
--- Name: ix_tasks_user_status_position; Type: INDEX; Schema: public; Owner: -
+-- Name: tasks uq_tasks_user_status_position; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
-CREATE INDEX ix_tasks_user_status_position ON public.tasks USING btree (user_id, status, "position");
+ALTER TABLE ONLY public.tasks
+    ADD CONSTRAINT uq_tasks_user_status_position UNIQUE (user_id, status, "position") DEFERRABLE INITIALLY DEFERRED;
 
 
 --
@@ -82,4 +83,5 @@ CREATE INDEX ix_tasks_user_status_position ON public.tasks USING btree (user_id,
 
 INSERT INTO public.schema_migrations (version) VALUES
     ('20260615000100'),
-    ('20260617120000');
+    ('20260617120000'),
+    ('20260618162000');

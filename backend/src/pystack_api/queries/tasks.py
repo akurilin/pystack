@@ -41,6 +41,11 @@ def count_tasks_query(user_id: str) -> Template:
     return t"SELECT count(*) FROM tasks WHERE user_id = {user_id}"
 
 
+def lock_user_board_query(user_id: str) -> Template:
+    """Serialize position mutations for one user's board within the transaction."""
+    return t"SELECT pg_advisory_xact_lock(hashtextextended({user_id}, 0))"
+
+
 def status_count_query(status: str, user_id: str, exclude_id: UUID | None = None) -> Template:
     """Count tasks in a column, optionally ignoring one task.
 
@@ -152,6 +157,11 @@ QUERY_CHECKS = (
         lambda: task_by_id_query(_EXAMPLE_ID, _EXAMPLE_USER),
     ),
     QueryCheck("tasks.count", count_tasks_query, lambda: count_tasks_query(_EXAMPLE_USER)),
+    QueryCheck(
+        "tasks.lock_user_board",
+        lock_user_board_query,
+        lambda: lock_user_board_query(_EXAMPLE_USER),
+    ),
     QueryCheck(
         "tasks.status_count",
         status_count_query,

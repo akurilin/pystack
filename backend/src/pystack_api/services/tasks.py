@@ -29,6 +29,7 @@ def list_tasks(connection: DatabaseConnection, user_id: str) -> list[TaskRead]:
 
 def create_task(connection: DatabaseConnection, user_id: str, payload: TaskCreate) -> TaskRead:
     """Create a task at the bottom of the backlog column."""
+    _lock_user_board(connection, user_id)
     position = _status_count(connection, user_id, TaskStatus.BACKLOG.value)
     return create_task_at_position(
         connection,
@@ -72,6 +73,7 @@ def update_task(
 def move_task(
     connection: DatabaseConnection, user_id: str, task_id: UUID, payload: TaskMove
 ) -> TaskRead | None:
+    _lock_user_board(connection, user_id)
     task = _get_task(connection, user_id, task_id)
     if task is None:
         return None
@@ -100,6 +102,7 @@ def move_task(
 
 
 def delete_task(connection: DatabaseConnection, user_id: str, task_id: UUID) -> bool:
+    _lock_user_board(connection, user_id)
     with connection.cursor(row_factory=class_row(DeletedTask)) as cursor:
         cursor.execute(queries.delete_task_query(task_id, user_id))
         deleted_task = cursor.fetchone()
@@ -127,6 +130,12 @@ def _fetch_task(connection: DatabaseConnection, query: Template) -> TaskRead | N
     with connection.cursor(row_factory=class_row(TaskRead)) as cursor:
         cursor.execute(query)
         return cursor.fetchone()
+
+
+def _lock_user_board(connection: DatabaseConnection, user_id: str) -> None:
+    # Complements the deferred unique constraint: normal position mutations
+    # serialize per user instead of racing into a commit-time uniqueness failure.
+    connection.execute(queries.lock_user_board_query(user_id))
 
 
 def _status_count(

@@ -1,7 +1,15 @@
 from collections.abc import Callable
 from typing import cast
+from uuid import UUID
 
+import psycopg
+import pytest
 from fastapi.testclient import TestClient
+
+from pystack_api.core.config import get_settings
+from pystack_api.queries import tasks as task_queries
+
+settings = get_settings()
 
 
 def create_task(client: TestClient, title: str) -> dict[str, object]:
@@ -88,3 +96,67 @@ def test_tasks_are_isolated_per_user(client_as: Callable[[str], TestClient]) -> 
 
     # Alice's task is untouched.
     assert [t["title"] for t in alice.get("/api/v1/tasks").json()] == ["Alice's task"]
+
+
+def test_database_rejects_duplicate_positions_for_same_user_and_column() -> None:
+    # The task ordering constraint is deferrable, so PostgreSQL raises when
+    # the transaction commits, not necessarily on the second INSERT.
+    user_id = "user_invariant"
+    with (
+        pytest.raises(psycopg.errors.UniqueViolation),
+        psycopg.connect(settings.test_database_url) as connection,
+    ):
+        connection.execute(
+            task_queries.insert_task_query(
+                task_id=UUID("00000000-0000-0000-0000-000000000001"),
+                user_id=user_id,
+                title="One",
+                description="",
+                status="backlog",
+                position=0,
+            )
+        )
+        connection.execute(
+            task_queries.insert_task_query(
+                task_id=UUID("00000000-0000-0000-0000-000000000002"),
+                user_id=user_id,
+                title="Two",
+                description="",
+                status="backlog",
+                position=0,
+            )
+        )
+
+
+def test_positions_are_independent_per_user_and_column() -> None:
+    with psycopg.connect(settings.test_database_url) as connection:
+        connection.execute(
+            task_queries.insert_task_query(
+                task_id=UUID("00000000-0000-0000-0000-000000000003"),
+                user_id="user_a",
+                title="A backlog",
+                description="",
+                status="backlog",
+                position=0,
+            )
+        )
+        connection.execute(
+            task_queries.insert_task_query(
+                task_id=UUID("00000000-0000-0000-0000-000000000004"),
+                user_id="user_a",
+                title="A ready",
+                description="",
+                status="ready",
+                position=0,
+            )
+        )
+        connection.execute(
+            task_queries.insert_task_query(
+                task_id=UUID("00000000-0000-0000-0000-000000000005"),
+                user_id="user_b",
+                title="B backlog",
+                description="",
+                status="backlog",
+                position=0,
+            )
+        )
