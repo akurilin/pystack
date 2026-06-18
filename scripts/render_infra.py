@@ -393,9 +393,7 @@ def main() -> int:
             "PYSTACK_CORS_ORIGINS": json.dumps(frontend_origins, separators=(",", ":")),
             # Clerk verifies session tokens were minted for an allowed frontend
             # origin; keep it in lockstep with the CORS allowlist.
-            "PYSTACK_CLERK_AUTHORIZED_PARTIES": json.dumps(
-                frontend_origins, separators=(",", ":")
-            ),
+            "PYSTACK_CLERK_AUTHORIZED_PARTIES": json.dumps(frontend_origins, separators=(",", ":")),
         }
         frontend_env = {"VITE_API_URL": backend.url}
 

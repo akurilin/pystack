@@ -1,33 +1,22 @@
 repos:
   - repo: local
     hooks:
-      - id: ruff-check
-        name: Ruff lint
-        entry: uv run --directory backend ruff check --fix .
+      # Reuse the Makefile targets so the hook and CI (`make check`) share one
+      # definition of scope — formatting and linting can't drift apart and
+      # silently miss a directory (e.g. scripts/) the way hand-rolled hooks did.
+      - id: format
+        name: Format
+        entry: make format
         language: system
-        files: ^backend/.*\.py$
         pass_filenames: false
+        always_run: true
 
-      - id: ruff-format
-        name: Ruff format
-        entry: uv run --directory backend ruff format .
+      - id: lint
+        name: Lint
+        entry: make lint
         language: system
-        files: ^backend/.*\.py$
         pass_filenames: false
-
-      - id: eslint
-        name: ESLint
-        entry: npm --prefix frontend run lint:fix
-        language: system
-        files: ^frontend/
-        pass_filenames: false
-
-      - id: prettier
-        name: Prettier
-        entry: npm --prefix frontend run format
-        language: system
-        files: ^frontend/
-        pass_filenames: false
+        always_run: true
 
       - id: gitleaks
         name: Gitleaks

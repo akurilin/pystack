@@ -137,11 +137,11 @@ lint: ## Run backend, scripts, and frontend linters
 	uv run --project $(BACKEND_DIR) ruff check --config $(BACKEND_DIR)/pyproject.toml scripts
 	cd $(FRONTEND_DIR) && npm run lint
 
-format: ## Format backend, scripts, and frontend source
-	cd $(BACKEND_DIR) && uv run ruff format .
+format: ## Auto-fix and format backend, scripts, and frontend source
+	cd $(BACKEND_DIR) && uv run ruff check --fix . && uv run ruff format .
 	uv run --project $(BACKEND_DIR) ruff check --fix --config $(BACKEND_DIR)/pyproject.toml scripts
 	uv run --project $(BACKEND_DIR) ruff format --config $(BACKEND_DIR)/pyproject.toml scripts
-	cd $(FRONTEND_DIR) && npm run format
+	cd $(FRONTEND_DIR) && npm run lint:fix && npm run format
 
 check-format: ## Confirm backend, scripts, and frontend source formatting
 	cd $(BACKEND_DIR) && uv run ruff format --check .
