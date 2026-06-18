@@ -130,11 +130,13 @@ def chat_with_assistant(
     request: Request,
 ) -> StreamingResponse:
     settings = cast(Settings, request.app.state.settings)
+    request_id = getattr(request.state, "request_id", None)
     return StreamingResponse(
         assistant_service.stream_assistant_events(
             settings=settings,
             connection=connection,
             user_id=user_id,
+            request_id=request_id if isinstance(request_id, str) else "unknown",
             request_messages=payload.messages,
         ),
         media_type="application/x-ndjson",

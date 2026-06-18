@@ -6,6 +6,7 @@ from clerk_backend_api import Clerk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from pystack_api.api.request_context import RequestContextMiddleware
 from pystack_api.api.router import api_router
 from pystack_api.core.config import Settings, get_settings
 from pystack_api.db.connection import DatabasePool, create_pool
@@ -58,7 +59,9 @@ def create_app(
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["X-Request-ID"],
     )
+    app.add_middleware(RequestContextMiddleware, environment=settings.environment)
     app.include_router(api_router, prefix=settings.api_prefix)
     return app
 

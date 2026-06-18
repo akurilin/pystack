@@ -12,12 +12,13 @@ import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
 
 from pystack_api.core.config import Settings
+from pystack_api.core.event_log import log_event
 from pystack_api.db.connection import DatabaseConnection
 from pystack_api.schemas import (
     AssistantChatMessage,
@@ -34,11 +35,6 @@ type OpenRouterMessage = dict[str, Any]
 
 OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
 MAX_TOOL_ROUNDS = 6
-# Use uvicorn's visible server logger for assistant traces so they show up under
-# `make dev` beside request logs. The trace helper below keeps normal logs compact
-# and reserves full tool payloads for DEBUG.
-logger = logging.getLogger("uvicorn.error")
-
 SYSTEM_PROMPT = """You are the Pystack todo board assistant.
 
 You help the user inspect and update a small Kanban-style todo board.
@@ -218,6 +214,7 @@ async def stream_assistant_events(
     settings: Settings,
     connection: DatabaseConnection,
     user_id: str,
+    request_id: str,
     request_messages: list[AssistantChatMessage],
 ) -> AsyncIterator[str]:
     """Yield frontend assistant events for one user chat request.
@@ -229,12 +226,38 @@ async def stream_assistant_events(
     """
 
     messages = _build_messages(request_messages)
+    assistant_run_id = str(uuid4())
+    run_started_at = time.perf_counter()
+    total_tool_calls = 0
+    mutation_count = 0
+
+    log_event(
+        logging.INFO,
+        "assistant.run.started",
+        environment=settings.environment,
+        request_id=request_id,
+        assistant_run_id=assistant_run_id,
+        model=settings.assistant_model,
+        request_message_count=len(request_messages),
+    )
 
     try:
-        for _ in range(MAX_TOOL_ROUNDS):
+        for round_index in range(MAX_TOOL_ROUNDS):
             text_buffer = ""
             tool_calls: list[PendingToolCall] = []
 
+            model_started_at = time.perf_counter()
+            log_event(
+                logging.INFO,
+                "assistant.model.started",
+                environment=settings.environment,
+                request_id=request_id,
+                assistant_run_id=assistant_run_id,
+                model=settings.assistant_model,
+                round_index=round_index,
+                message_count=len(messages),
+                available_tool_count=len(TASK_TOOL_DEFINITIONS),
+            )
             async for chunk in _stream_openrouter_chat(settings, messages):
                 chunk_type = chunk["type"]
                 if chunk_type == "text_delta":
@@ -244,7 +267,32 @@ async def stream_assistant_events(
                 elif chunk_type == "tool_calls":
                     tool_calls = cast(list[PendingToolCall], chunk["tool_calls"])
 
+            log_event(
+                logging.INFO,
+                "assistant.model.completed",
+                environment=settings.environment,
+                request_id=request_id,
+                assistant_run_id=assistant_run_id,
+                model=settings.assistant_model,
+                round_index=round_index,
+                duration_ms=_elapsed_ms(model_started_at),
+                text_char_count=len(text_buffer),
+                tool_call_count=len(tool_calls),
+            )
             if not tool_calls:
+                log_event(
+                    logging.INFO,
+                    "assistant.run.completed",
+                    environment=settings.environment,
+                    request_id=request_id,
+                    assistant_run_id=assistant_run_id,
+                    model=settings.assistant_model,
+                    status="ok",
+                    duration_ms=_elapsed_ms(run_started_at),
+                    rounds_used=round_index + 1,
+                    tool_call_count=total_tool_calls,
+                    mutation_count=mutation_count,
+                )
                 yield _encode_event({"type": "done"})
                 return
 
@@ -256,10 +304,16 @@ async def stream_assistant_events(
             messages.append(assistant_message)
 
             for tool_call in tool_calls:
+                total_tool_calls += 1
                 arguments = _parse_tool_arguments(tool_call)
                 _log_tool_trace(
-                    "call",
-                    {
+                    event="call",
+                    environment=settings.environment,
+                    request_id=request_id,
+                    assistant_run_id=assistant_run_id,
+                    model=settings.assistant_model,
+                    round_index=round_index,
+                    payload={
                         "tool_call_id": tool_call.id,
                         "tool_name": tool_call.name,
                         "args": arguments,
@@ -271,9 +325,16 @@ async def stream_assistant_events(
                     result = execute_task_tool(connection, user_id, tool_call.name, arguments)
                     tool_content: JsonObject = result.content
                     mutated = result.mutated
+                    if mutated:
+                        mutation_count += 1
                     _log_tool_trace(
-                        "result",
-                        {
+                        event="result",
+                        environment=settings.environment,
+                        request_id=request_id,
+                        assistant_run_id=assistant_run_id,
+                        model=settings.assistant_model,
+                        round_index=round_index,
+                        payload={
                             "tool_call_id": tool_call.id,
                             "tool_name": tool_call.name,
                             "duration_ms": _elapsed_ms(started_at),
@@ -285,8 +346,13 @@ async def stream_assistant_events(
                     tool_content = {"error": str(exc)}
                     mutated = False
                     _log_tool_trace(
-                        "error",
-                        {
+                        event="error",
+                        environment=settings.environment,
+                        request_id=request_id,
+                        assistant_run_id=assistant_run_id,
+                        model=settings.assistant_model,
+                        round_index=round_index,
+                        payload={
                             "tool_call_id": tool_call.id,
                             "tool_name": tool_call.name,
                             "duration_ms": _elapsed_ms(started_at),
@@ -307,8 +373,10 @@ async def stream_assistant_events(
 
         raise AssistantChatError("The assistant reached the maximum tool-call limit.")
     except AssistantChatError as exc:
+        _log_assistant_run_error(settings, request_id, assistant_run_id, run_started_at, exc)
         yield _encode_event({"type": "error", "message": str(exc)})
     except httpx.HTTPError as exc:
+        _log_assistant_run_error(settings, request_id, assistant_run_id, run_started_at, exc)
         yield _encode_event({"type": "error", "message": f"OpenRouter request failed: {exc}"})
 
 
@@ -552,37 +620,67 @@ def _elapsed_ms(started_at: float) -> float:
     return round((time.perf_counter() - started_at) * 1000, 2)
 
 
-def _log_tool_trace(event: str, payload: JsonObject, *, is_error: bool = False) -> None:
-    """Log assistant tool execution without dumping raw board data at INFO.
+def _log_assistant_run_error(
+    settings: Settings,
+    request_id: str,
+    assistant_run_id: str,
+    started_at: float,
+    exc: Exception,
+) -> None:
+    log_event(
+        logging.WARNING,
+        "assistant.run.error",
+        environment=settings.environment,
+        request_id=request_id,
+        assistant_run_id=assistant_run_id,
+        model=settings.assistant_model,
+        status="error",
+        duration_ms=_elapsed_ms(started_at),
+        error_type=exc.__class__.__name__,
+        error_message=str(exc),
+    )
 
-    Tool payloads can include the entire board. Keep INFO useful for normal
-    operation with a compact summary, and emit full args/results only at DEBUG
-    for deeper troubleshooting.
-    """
 
-    summary = json.dumps(_tool_trace_summary(event, payload), default=str)
-    detail = json.dumps({"event": event, **payload}, default=str)
-    if is_error:
-        logger.warning("assistant_tool_trace %s", summary)
-        logger.debug("assistant_tool_trace_detail %s", detail)
-        return
-    logger.info("assistant_tool_trace %s", summary)
-    logger.debug("assistant_tool_trace_detail %s", detail)
+def _log_tool_trace(
+    *,
+    event: str,
+    environment: str,
+    request_id: str,
+    assistant_run_id: str,
+    model: str,
+    round_index: int,
+    payload: JsonObject,
+    is_error: bool = False,
+) -> None:
+    """Log assistant tool execution without dumping raw board data."""
+
+    status = "error" if is_error else "ok" if event == "result" else "started"
+    log_event(
+        logging.WARNING if is_error else logging.INFO,
+        f"assistant.tool.{event}",
+        environment=environment,
+        request_id=request_id,
+        assistant_run_id=assistant_run_id,
+        model=model,
+        round_index=round_index,
+        status=status,
+        **_tool_trace_summary(payload),
+    )
 
 
-def _tool_trace_summary(event: str, payload: JsonObject) -> JsonObject:
-    summary: JsonObject = {"event": event}
+def _tool_trace_summary(payload: JsonObject) -> JsonObject:
+    summary: JsonObject = {}
     for key in ("tool_call_id", "tool_name", "duration_ms", "mutated", "error"):
         if key in payload:
             summary[key] = payload[key]
 
     args = payload.get("args")
     if isinstance(args, dict):
-        summary["args"] = _summarize_tool_args(args)
+        summary["tool_args"] = _summarize_tool_args(args)
 
     result = payload.get("result")
     if isinstance(result, dict):
-        summary["result"] = _summarize_tool_result(result)
+        summary["tool_result"] = _summarize_tool_result(result)
 
     return summary
 

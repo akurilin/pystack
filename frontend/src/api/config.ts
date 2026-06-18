@@ -12,9 +12,21 @@ client.setConfig({ baseUrl: import.meta.env.VITE_API_URL ?? "" });
 // each request. `getToken` is the framework-agnostic accessor — it waits for
 // Clerk to initialize and is safe to call here in a plain module (no hook).
 client.interceptors.request.use(async (request) => {
+  request.headers.set("X-Request-ID", createRequestId());
+
   const token = await getToken();
   if (token) {
     request.headers.set("Authorization", `Bearer ${token}`);
   }
   return request;
 });
+
+function createRequestId(): string {
+  if ("randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+
+  // Old browsers are unlikely here, but keep the header present if the native
+  // UUID helper is missing.
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
