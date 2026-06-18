@@ -47,7 +47,7 @@ pre-commit-install: backend-sync ## Install the repository Git pre-commit hook
 # === Development servers ===
 
 api: ## Run the FastAPI development server
-	cd $(BACKEND_DIR) && uv run uvicorn pystack_api.main:app --reload
+	set -o pipefail; cd $(BACKEND_DIR) && uv run uvicorn pystack_api.main:app --reload 2>&1 | uv run python ../scripts/dev_pretty_logs.py
 
 frontend: ## Run the Vite development server
 	cd $(FRONTEND_DIR) && npm run dev
