@@ -12,6 +12,7 @@ import {
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AssistantPane } from "./features/assistant/AssistantPane";
 import { Board } from "./features/board/Board";
+import { SentryTest } from "./SentryTest";
 
 // The public landing (with the login box) lives at "/", separate from the
 // internal app at "/board". Only the landing is public; "/board" is gated, so
@@ -21,6 +22,8 @@ export function App() {
     <Routes>
       <Route path="/" element={<SignInLanding />} />
       <Route path="/board" element={<ProtectedBoard />} />
+      {/* Throwaway page for verifying Sentry error capture; safe to remove. */}
+      <Route path="/sentry-test" element={<SentryTest />} />
       {/* Unknown paths fall back to the landing. */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

@@ -57,6 +57,12 @@ services:
       # production instance's pk_live_ key here.
       - key: VITE_CLERK_PUBLISHABLE_KEY
         sync: false
+      # Sentry DSN for frontend error monitoring. Write-only and shipped in the
+      # bundle anyway, but kept out of the repo via sync:false so forks/reuses
+      # don't inherit it and send errors to this Sentry project. Set in the
+      # Render dashboard.
+      - key: VITE_SENTRY_DSN
+        sync: false
 
 databases:
   - name: pystack-db
