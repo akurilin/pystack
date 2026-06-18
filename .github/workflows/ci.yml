@@ -53,6 +53,12 @@ jobs:
         run: make backend-sync frontend-install
 
       - name: Run checks
+        # The backend suite includes real Clerk integration tests. Keep these
+        # as repo secrets and expose them only to the verification step that
+        # needs to mint and verify Clerk-backed session tokens.
+        env:
+          PYSTACK_CLERK_SECRET_KEY: ${{ secrets.PYSTACK_CLERK_SECRET_KEY }}
+          CLERK_TEST_USER_USERNAME: ${{ secrets.CLERK_TEST_USER_USERNAME }}
         run: make check
 
   e2e:
@@ -101,12 +107,12 @@ jobs:
         # The Clerk vars drive the real sign-in: the publishable key initializes
         # Clerk in the browser (Vite exposes VITE_-prefixed process env to the
         # client), the secret key lets clerkSetup mint a testing token, and the
-        # E2E_CLERK_USER_* creds are the dev-instance test user. Locally these
+        # CLERK_TEST_USER_* creds are the dev-instance test user. Locally these
         # come from the repo-root .env; in CI they come from repo secrets.
         env:
           PYSTACK_OPENROUTER_API_KEY: test-openrouter-key
           VITE_CLERK_PUBLISHABLE_KEY: ${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
           PYSTACK_CLERK_SECRET_KEY: ${{ secrets.PYSTACK_CLERK_SECRET_KEY }}
-          E2E_CLERK_USER_USERNAME: ${{ secrets.E2E_CLERK_USER_USERNAME }}
-          E2E_CLERK_USER_PASSWORD: ${{ secrets.E2E_CLERK_USER_PASSWORD }}
+          CLERK_TEST_USER_USERNAME: ${{ secrets.CLERK_TEST_USER_USERNAME }}
+          CLERK_TEST_USER_PASSWORD: ${{ secrets.CLERK_TEST_USER_PASSWORD }}
         run: make test-e2e
