@@ -28,8 +28,10 @@ def create_app(
         sentry_sdk.init(
             dsn=settings.sentry_dsn,
             environment=settings.environment,
-            # Attach request headers and client IP to events for easier debugging.
-            send_default_pii=True,
+            # Conservative default for a clonable scaffold: do not attach client
+            # IP or request headers to events. Flip on if richer context is worth
+            # the PII tradeoff for your deployment.
+            send_default_pii=False,
         )
     if database_pool is None:
         database_pool = create_pool(settings.database_url)

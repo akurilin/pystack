@@ -42,7 +42,9 @@ def get_health(request: Request, response: Response) -> HealthStatus:
     return HealthStatus(status="ok", database="up")
 
 
-@api_router.get("/sentry-test", operation_id="triggerSentryTest", tags=["health"])
+# include_in_schema=False keeps this throwaway endpoint out of the OpenAPI schema
+# and therefore out of the generated frontend client.
+@api_router.get("/sentry-test", include_in_schema=False)
 def trigger_sentry_test() -> None:
     """Throwaway endpoint that raises an uncaught error for verifying Sentry.
 
