@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from clerk_backend_api import Clerk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,16 @@ def create_app(
     database and share a single pool across requests.
     """
     settings = settings or get_settings()
+    # Initialize error monitoring before the app is built so the FastAPI/ASGI
+    # integration hooks in. Gated on the DSN so dev and tests stay no-ops; the
+    # value is supplied per-deployment (Render), never hardcoded.
+    if settings.sentry_dsn:
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.environment,
+            # Attach request headers and client IP to events for easier debugging.
+            send_default_pii=True,
+        )
     if database_pool is None:
         database_pool = create_pool(settings.database_url)
 

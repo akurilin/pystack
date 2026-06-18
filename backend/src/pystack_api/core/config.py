@@ -36,6 +36,16 @@ class Settings(BaseSettings):
     # Origins permitted to present session tokens, checked during verification to
     # reject tokens minted for a different frontend. Mirrors the dev frontend URL.
     clerk_authorized_parties: list[str] = ["http://localhost:5173"]
+    # Sentry error monitoring. Optional: when unset (local dev, tests) the SDK is
+    # never initialized, so it stays a no-op. Accepts Sentry's conventional
+    # SENTRY_DSN name in addition to the PYSTACK_ prefix.
+    sentry_dsn: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("PYSTACK_SENTRY_DSN", "SENTRY_DSN"),
+    )
+    # Tags events in Sentry so production errors are distinguishable from local
+    # ones. Render sets this to "production"; defaults to "development" otherwise.
+    environment: str = "development"
 
     def validate_assistant_config(self) -> None:
         if self.openrouter_api_key:

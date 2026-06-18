@@ -42,6 +42,16 @@ def get_health(request: Request, response: Response) -> HealthStatus:
     return HealthStatus(status="ok", database="up")
 
 
+@api_router.get("/sentry-test", operation_id="triggerSentryTest", tags=["health"])
+def trigger_sentry_test() -> None:
+    """Throwaway endpoint that raises an uncaught error for verifying Sentry.
+
+    Hitting it returns a 500 and reports the exception to Sentry. Safe to remove
+    once error capture is confirmed.
+    """
+    _ = 1 / 0
+
+
 @api_router.get("/tasks", operation_id="listTasks", response_model=list[TaskRead], tags=["tasks"])
 def list_tasks(connection: ConnectionDependency, user_id: UserIdDependency) -> list[TaskRead]:
     return task_service.list_tasks(connection, user_id)

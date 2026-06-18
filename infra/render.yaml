@@ -31,6 +31,14 @@ services:
         sync: false
       - key: PYSTACK_CLERK_SECRET_KEY
         sync: false
+      # Sentry DSN for backend error monitoring. Kept out of the repo via
+      # sync:false so forks/reuses don't report into this Sentry project; set in
+      # the Render dashboard.
+      - key: PYSTACK_SENTRY_DSN
+        sync: false
+      # Tags Sentry events as production (vs. the default "development").
+      - key: PYSTACK_ENVIRONMENT
+        value: production
 
   - type: web
     name: pystack-frontend
