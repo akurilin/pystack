@@ -10,6 +10,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { BoundaryErrorTest } from "./BoundaryErrorTest";
 import { AssistantPane } from "./features/assistant/AssistantPane";
 import { Board } from "./features/board/Board";
 import { SentryTest } from "./SentryTest";
@@ -24,6 +25,8 @@ export function App() {
       <Route path="/board" element={<ProtectedBoard />} />
       {/* Throwaway page for verifying Sentry error capture; safe to remove. */}
       <Route path="/sentry-test" element={<SentryTest />} />
+      {/* Throwaway route for verifying the top-level error boundary fallback. */}
+      <Route path="/boundary-error-test" element={<BoundaryErrorTest />} />
       {/* Unknown paths fall back to the landing. */}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
