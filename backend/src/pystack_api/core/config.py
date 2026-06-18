@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     )
     # Origins permitted to present session tokens, checked during verification to
     # reject tokens minted for a different frontend. Mirrors the dev frontend URL.
+    # The check fails closed: the default, a typo'd domain, or an empty list all
+    # reject everything. Only the explicit ["*"] sentinel disables it (accept any
+    # authorized party) — used by the auth tests, since backend-minted tokens
+    # carry no azp claim that a real allowlist could match.
     clerk_authorized_parties: list[str] = ["http://localhost:5173"]
     # Sentry error monitoring. Optional: when unset (local dev, tests) the SDK is
     # never initialized, so it stays a no-op. Accepts Sentry's conventional

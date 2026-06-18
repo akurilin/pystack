@@ -4,8 +4,8 @@ import { expect, test } from "@playwright/test";
 // Credentials for a Clerk dev-instance test user. global-setup.ts guarantees
 // these are set (failing the suite with a clear message otherwise), so the test
 // can use them directly.
-const username = process.env.E2E_CLERK_USER_USERNAME!;
-const password = process.env.E2E_CLERK_USER_PASSWORD!;
+const username = process.env.CLERK_TEST_USER_USERNAME!;
+const password = process.env.CLERK_TEST_USER_PASSWORD!;
 
 test("creates and removes a task on the board", async ({ page }) => {
   // A unique title keeps the test idempotent against the shared dev database.

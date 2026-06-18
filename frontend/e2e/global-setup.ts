@@ -15,8 +15,8 @@ config({ path: fileURLToPath(new URL("../../.env", import.meta.url)) });
 const REQUIRED_ENV = [
   "VITE_CLERK_PUBLISHABLE_KEY",
   "PYSTACK_CLERK_SECRET_KEY",
-  "E2E_CLERK_USER_USERNAME",
-  "E2E_CLERK_USER_PASSWORD",
+  "CLERK_TEST_USER_USERNAME",
+  "CLERK_TEST_USER_PASSWORD",
 ];
 
 export default async function globalSetup() {
