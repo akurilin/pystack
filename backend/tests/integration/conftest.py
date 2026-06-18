@@ -32,6 +32,11 @@ def _build_client(user_id: str) -> TestClient:
             "database_url": settings.test_database_url,
             "openrouter_api_key": "test-openrouter-key",
             "clerk_secret_key": "sk_test_dummy",
+            # Neutralize Sentry so test-time errors never report to a real
+            # project. Without this, a developer's local .env DSN leaks into the
+            # test app and create_app() initializes Sentry.
+            "sentry_dsn": None,
+            "environment": "test",
         }
     )
     app = create_app(test_settings)
