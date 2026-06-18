@@ -37,6 +37,7 @@ target that reconciles post-creation settings.
 - [Ruff](https://docs.astral.sh/ruff/) and [mypy](https://mypy-lang.org/) — linting, formatting, and strict type checking
 - [pytest](https://docs.pytest.org/) — integration tests that plan every registered query against a migrated test database
 - [Clerk](https://clerk.com/) — authentication; the backend verifies session tokens and scopes every request to the signed-in user
+- [Sentry](https://sentry.io/) — optional error monitoring, initialized only when a DSN is configured
 
 **Frontend**
 
@@ -45,7 +46,8 @@ target that reconciles post-creation settings.
 - [shadcn/ui](https://ui.shadcn.com/) — Radix UI-based components vendored into `frontend/src/components/ui/`; only the components in use are kept, pull more with `npx shadcn add`
 - [Lucide](https://lucide.dev/) — icon set
 - [Clerk](https://clerk.com/) — authentication UI and session management via `@clerk/react`
-- [assistant-ui](https://www.assistant-ui.com/) — chat primitives for the optional Assistant pane
+- [Sentry](https://sentry.io/) — optional browser error monitoring via `@sentry/react`, enabled only when a DSN is configured
+- [assistant-ui](https://www.assistant-ui.com/) — chat primitives for the Assistant pane
 - [Hey API](https://heyapi.dev/) — generates the typed client from the backend's exported OpenAPI schema
 - [TanStack Query](https://tanstack.com/query) — server-state management
 - [Vitest](https://vitest.dev/) and [Testing Library](https://testing-library.com/) — component tests
@@ -154,15 +156,14 @@ sign-in stops at a second factor and the suite cannot proceed. `make test-e2e`
 fails fast and lists any missing variables. In CI the same four values come from
 repository secrets of the same names.
 
-## Optional Assistant
+## Assistant
 
-The board includes an opt-in Assistant UI chat pane that can inspect and mutate
-tasks through backend tool calls. `.env.example` is the versioned template with
-safe defaults; copy those values into ignored `.env` for local settings and
-secrets.
+The board includes an Assistant chat pane that can inspect and mutate tasks
+through backend tool calls. `.env.example` is the versioned template with safe
+defaults; copy those values into ignored `.env` for local settings and secrets.
 
-The API validates assistant configuration during app startup. To run the app
-with the assistant enabled, set an OpenRouter API key in `.env`:
+The API validates assistant configuration during startup and refuses to boot
+without an OpenRouter API key, set in `.env`:
 
 ```bash
 PYSTACK_OPENROUTER_API_KEY=...
@@ -186,9 +187,11 @@ does not create the initial Blueprint connection:
 1. In the Render Dashboard, create a Blueprint from this repository, the `main`
    branch, and `infra/render.yaml`. Render will ask for
    the env vars marked `sync: false` — `PYSTACK_OPENROUTER_API_KEY`,
-   `PYSTACK_CLERK_SECRET_KEY`, and the frontend's `VITE_CLERK_PUBLISHABLE_KEY`.
-   Paste the production OpenRouter key and your Clerk production instance keys
-   there, then wait for provisioning to finish.
+   `PYSTACK_CLERK_SECRET_KEY`, the frontend's `VITE_CLERK_PUBLISHABLE_KEY`, and
+   the optional Sentry DSNs (`PYSTACK_SENTRY_DSN`, `VITE_SENTRY_DSN`). Paste the
+   production OpenRouter key and your Clerk production instance keys there; leave
+   the Sentry DSNs blank to keep error monitoring off. Then wait for provisioning
+   to finish.
 2. Reconcile post-creation settings and run non-mutating health checks:
 
 ```bash
@@ -227,56 +230,17 @@ only if you need to override Render discovery.
 
 ## Make Commands
 
-Run `make help` for the full list. The most useful targets:
-
-**Setup and servers**
-
-```bash
-make setup          # set up a fresh checkout end to end
-make dev            # run the backend and frontend dev servers together
-make api            # run only the FastAPI dev server
-make frontend       # run only the Vite dev server
-```
-
-**Database**
+A root `Makefile` is the single entry point for common tasks. The essentials to
+get started, run the app, and manage the database:
 
 ```bash
-make db-up          # start the local PostgreSQL server and wait until healthy
-make db-down        # stop local services without deleting data
-make db-migrate     # migrate both the dev and test databases
-make db-status      # show DBmate migration status
-make db-dump-schema # refresh the committed db/schema.sql snapshot
-make db-reset       # destructively reset and migrate local databases
+make setup       # set up a fresh checkout end to end
+make dev         # run the backend and frontend dev servers together
+make db-migrate  # migrate the development and test databases
+make check       # run the full verification gate before pushing
 ```
 
-**Infrastructure**
-
-```bash
-make infra          # reconcile Render env vars and health-check the deployment
-```
-
-**Code generation**
-
-```bash
-make generate-api   # export OpenAPI and regenerate the typed frontend client
-```
-
-**Quality checks**
-
-```bash
-make test           # run backend and frontend tests
-make lint           # run backend and frontend linters
-make format         # format backend and frontend source
-make typecheck      # run mypy and the TypeScript type checker
-make build          # build the production frontend
-make check-secrets  # scan the full Git history for secrets
-make pre-commit     # run every pre-commit hook against tracked files
-make check          # run the complete verification suite
-```
-
-`make check` runs the same gate you should pass before pushing: it confirms the
-generated client and schema snapshot are current, checks formatting, lints,
-type-checks, runs all tests, builds the frontend, and scans for secrets.
+Run `make help` for the complete, grouped list, or read the `Makefile` directly.
 
 ## License
 

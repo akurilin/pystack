@@ -22,6 +22,8 @@ PROD_DATABASE_URL_CMD := uv run --project $(BACKEND_DIR) python scripts/render_d
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
+# === Setup ===
+
 check-tools: ## Verify required machine-level tools are installed
 	@for tool in uv node npm docker dbmate gitleaks; do \
 		command -v $$tool >/dev/null || { echo "Missing required tool: $$tool"; exit 1; }; \
@@ -38,6 +40,22 @@ backend-sync: ## Install the managed Python runtime and backend dependencies
 
 frontend-install: ## Install locked frontend dependencies
 	cd $(FRONTEND_DIR) && npm ci
+
+pre-commit-install: backend-sync ## Install the repository Git pre-commit hook
+	uv run --project $(BACKEND_DIR) pre-commit install
+
+# === Development servers ===
+
+api: ## Run the FastAPI development server
+	cd $(BACKEND_DIR) && uv run uvicorn pystack_api.main:app --reload
+
+frontend: ## Run the Vite development server
+	cd $(FRONTEND_DIR) && npm run dev
+
+dev: ## Run backend and frontend development servers
+	$(MAKE) -j2 api frontend
+
+# === Database (local) ===
 
 db-up: ## Start PostgreSQL and wait until it is healthy
 	$(COMPOSE) up -d --wait db
@@ -76,6 +94,11 @@ db-status: db-up ## Show migration status for development and test databases
 	@echo "Test database:"
 	@$(DBMATE) --url "$(DBMATE_TEST_DATABASE_URL)" --no-dump-schema status
 
+db-dump-schema: db-up ## Refresh db/schema.sql from the development database
+	$(DBMATE) --url "$(DBMATE_DEV_DATABASE_URL)" dump
+
+# === Database (production) ===
+
 # Production migrations resolve the Render Postgres URL at runtime, so generated
 # database credentials do not need to be copied into a local env file. There is
 # intentionally no prod reset/drop target: the destructive db-reset-* flow can
@@ -96,30 +119,18 @@ psql-prod: db-up ## Open an interactive psql session on the production database
 	@DATABASE_URL="$$($(PROD_DATABASE_URL_CMD))" && \
 		PATH="$(CURDIR)/bin:$$PATH" psql "$$DATABASE_URL"
 
-db-dump-schema: db-up ## Refresh db/schema.sql from the development database
-	$(DBMATE) --url "$(DBMATE_DEV_DATABASE_URL)" dump
-
-infra: ## Validate Render Blueprint, sync secret env vars, deploy changes, and health-check Render
-	uv run --project $(BACKEND_DIR) python scripts/render_infra.py
+# === Code generation ===
 
 generate-api: ## Export OpenAPI and regenerate the typed frontend API client
 	cd $(BACKEND_DIR) && uv run python -m pystack_api.commands.export_openapi
 	cd $(FRONTEND_DIR) && npm run generate-api
 
-check-generated: generate-api ## Confirm the committed frontend API client is current
-	git diff --exit-code -- $(FRONTEND_DIR)/src/api/generated
+# === Infrastructure ===
 
-check-db-schema: db-migrate-dev db-dump-schema ## Confirm the committed database schema snapshot is current
-	git diff --exit-code -- db/schema.sql
+infra: ## Validate Render Blueprint, sync secret env vars, deploy changes, and health-check Render
+	uv run --project $(BACKEND_DIR) python scripts/render_infra.py
 
-api: ## Run the FastAPI development server
-	cd $(BACKEND_DIR) && uv run uvicorn pystack_api.main:app --reload
-
-frontend: ## Run the Vite development server
-	cd $(FRONTEND_DIR) && npm run dev
-
-dev: ## Run backend and frontend development servers
-	$(MAKE) -j2 api frontend
+# === Tests ===
 
 test: test-backend test-frontend ## Run all tests
 
@@ -131,6 +142,8 @@ test-frontend: ## Run frontend tests
 
 test-e2e: db-migrate-dev ## Run Playwright end-to-end tests against the dev stack
 	cd $(FRONTEND_DIR) && npm run e2e
+
+# === Quality checks ===
 
 lint: ## Run backend, scripts, and frontend linters
 	cd $(BACKEND_DIR) && uv run ruff check .
@@ -158,8 +171,11 @@ build: ## Build the production frontend
 check-secrets: ## Scan the complete Git history for secrets
 	gitleaks git --redact --verbose .
 
-pre-commit-install: backend-sync ## Install the repository Git pre-commit hook
-	uv run --project $(BACKEND_DIR) pre-commit install
+check-generated: generate-api ## Confirm the committed frontend API client is current
+	git diff --exit-code -- $(FRONTEND_DIR)/src/api/generated
+
+check-db-schema: db-migrate-dev db-dump-schema ## Confirm the committed database schema snapshot is current
+	git diff --exit-code -- db/schema.sql
 
 pre-commit: ## Run every pre-commit hook against all tracked files
 	uv run --project $(BACKEND_DIR) pre-commit run --all-files
