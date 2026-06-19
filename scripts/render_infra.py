@@ -11,7 +11,6 @@ import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_API_BASE_URL = "https://api.render.com/v1"
@@ -26,6 +25,9 @@ POSTGRES_NAME = "pystack-db"
 # Clerk authorized parties. The onrender URL is discovered from Render at runtime;
 # this one is fixed, so it lives here as a literal.
 FRONTEND_CUSTOM_ORIGIN = "https://pystack.kuril.in"
+
+type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
+type JsonObject = dict[str, JsonValue]
 
 
 class InfraError(RuntimeError):
@@ -45,7 +47,7 @@ class RenderClient:
         self.api_key = api_key
         self.api_base_url = api_base_url.rstrip("/")
 
-    def request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
+    def request(self, method: str, path: str, body: JsonObject | None = None) -> JsonValue:
         data = None if body is None else json.dumps(body).encode()
         url = f"{self.api_base_url}{path}"
         require_http_url(url)

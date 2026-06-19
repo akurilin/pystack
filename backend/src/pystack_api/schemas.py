@@ -49,5 +49,12 @@ class AssistantChatMessage(BaseModel):
     content: str = Field(min_length=1, max_length=20_000)
 
 
+def _empty_assistant_messages() -> list[AssistantChatMessage]:
+    return []
+
+
 class AssistantChatRequest(BaseModel):
-    messages: list[AssistantChatMessage] = Field(default_factory=list, max_length=50)
+    messages: list[AssistantChatMessage] = Field(
+        default_factory=_empty_assistant_messages,
+        max_length=50,
+    )

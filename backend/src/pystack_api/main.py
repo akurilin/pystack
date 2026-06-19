@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import sentry_sdk
@@ -38,7 +38,7 @@ def create_app(
         database_pool = create_pool(settings.database_url)
 
     @asynccontextmanager
-    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         settings.validate_assistant_config()
         settings.validate_clerk_config()
         database_pool.open(wait=True)
