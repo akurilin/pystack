@@ -6,6 +6,10 @@ from typing import cast
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic_ai import Agent
+from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
+from pydantic_ai.models.test import TestModel
 
 from pystack_api.api.auth import get_current_user_id
 from pystack_api.api.request_context import RequestContextMiddleware
@@ -32,7 +36,7 @@ def test_assistant_chat_logs_request_scoped_tool_events(
     # these edges into injected Protocols (for example AssistantModelClient and
     # AssistantToolExecutor) and override them with FastAPI dependency_overrides
     # instead of monkeypatching private service functions.
-    monkeypatch.setattr(assistant_service, "_stream_openrouter_chat", _fake_openrouter_stream)
+    monkeypatch.setattr(assistant_service, "_build_agent", _fake_build_agent)
     monkeypatch.setattr(assistant_service, "execute_task_tool", _fake_execute_task_tool)
 
     try:
@@ -55,9 +59,51 @@ def test_assistant_chat_logs_request_scoped_tool_events(
     tool_event = _find_event(events, "assistant.tool.result")
     assert tool_event["request_id"] == request_id
     assert tool_event["assistant_run_id"]
-    assert tool_event["tool_call_id"] == "tool-call-123"
+    assert str(tool_event["tool_call_id"]).startswith("pyd_ai_tool_call_id__")
     assert tool_event["tool_name"] == "list_tasks"
     assert tool_event["status"] == "ok"
+
+
+def test_assistant_runs_tool_when_model_emits_preamble_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model that emits text in the SAME response as a tool call must still run
+    the tool and stream the follow-up answer.
+
+    Regression: the assistant streamed the final model response only, so when the
+    model prepended preamble text to its tool call the run ended at the preamble
+    and the tool never executed (no board change, no answer).
+    """
+
+    tool_calls: list[str] = []
+
+    def recording_execute_task_tool(
+        connection: DatabaseConnection,
+        user_id: str,
+        tool_name: str,
+        arguments: assistant_service.JsonObject,
+    ) -> assistant_service.AssistantToolResult:
+        tool_calls.append(tool_name)
+        return assistant_service.AssistantToolResult({"tasks": [], "total": 0})
+
+    monkeypatch.setattr(assistant_service, "_build_agent", _fake_build_agent_with_preamble)
+    monkeypatch.setattr(assistant_service, "execute_task_tool", recording_execute_task_tool)
+
+    response = _client().post(
+        "/api/v1/assistant/chat",
+        json={"messages": [{"role": "user", "content": "List my tasks"}]},
+    )
+
+    assert response.status_code == 200
+    # The tool ran even though its response also carried preamble text.
+    assert tool_calls == ["list_tasks"]
+    # Both the preamble and the post-tool answer reached the client.
+    streamed_text = "".join(
+        event["text"]
+        for event in (json.loads(line) for line in response.text.splitlines())
+        if event["type"] == "text_delta"
+    )
+    assert streamed_text == "Let me check your tasks. You have 0 tasks."
 
 
 def _client() -> TestClient:
@@ -79,32 +125,46 @@ def _fake_connection() -> Generator[DatabaseConnection]:
     yield cast(DatabaseConnection, object())
 
 
-async def _fake_openrouter_stream(
+def _fake_build_agent(
     settings: Settings,
-    messages: list[dict[str, object]],
-) -> AsyncIterator[dict[str, object]]:
-    if any(message.get("role") == "tool" for message in messages):
-        yield {"type": "text_delta", "text": "Done"}
-        return
+) -> Agent[assistant_service.AssistantDeps, str]:
+    return Agent[assistant_service.AssistantDeps, str](
+        TestModel(call_tools=["list_tasks"], custom_output_text="Done"),
+        deps_type=assistant_service.AssistantDeps,
+        output_type=str,
+        instructions=assistant_service.SYSTEM_PROMPT,
+        tools=assistant_service._assistant_tools(),
+    )
 
-    yield {
-        "type": "tool_calls",
-        "tool_calls": [
-            assistant_service.PendingToolCall(
-                index=0,
-                id="tool-call-123",
-                name="list_tasks",
-                arguments_text="{}",
-            )
-        ],
-    }
+
+def _fake_build_agent_with_preamble(
+    settings: Settings,
+) -> Agent[assistant_service.AssistantDeps, str]:
+    async def stream_model(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> AsyncIterator[str | DeltaToolCalls]:
+        # First turn: preamble text and the tool call in one response. Second
+        # turn (a prior ModelResponse exists): the answer using the tool result.
+        if any(isinstance(message, ModelResponse) for message in messages):
+            yield "You have 0 tasks."
+        else:
+            yield "Let me check your tasks. "
+            yield {0: DeltaToolCall(name="list_tasks", json_args="{}")}
+
+    return Agent[assistant_service.AssistantDeps, str](
+        FunctionModel(stream_function=stream_model),
+        deps_type=assistant_service.AssistantDeps,
+        output_type=str,
+        instructions=assistant_service.SYSTEM_PROMPT,
+        tools=assistant_service._assistant_tools(),
+    )
 
 
 def _fake_execute_task_tool(
     connection: DatabaseConnection,
     user_id: str,
     tool_name: str,
-    arguments: dict[str, object],
+    arguments: assistant_service.JsonObject,
 ) -> assistant_service.AssistantToolResult:
     return assistant_service.AssistantToolResult(
         {

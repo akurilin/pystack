@@ -172,6 +172,7 @@ check-format: ## Confirm backend, scripts, and frontend source formatting
 
 typecheck: ## Run backend and frontend type checks
 	cd $(BACKEND_DIR) && uv run mypy src tests
+	cd $(BACKEND_DIR) && uv run pyright
 	cd $(FRONTEND_DIR) && npm run typecheck
 
 build: ## Build the production frontend

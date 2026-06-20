@@ -1,21 +1,31 @@
-"""Assistant chat service backed by OpenRouter and local task tools.
+"""Assistant chat service backed by Pydantic AI, OpenRouter, and local task tools.
 
 The public entry point is `stream_assistant_events`, which turns a chat request
-into newline-delimited JSON events for the frontend. Internally it runs one or
-more OpenRouter chat-completion rounds, executes any requested task tools
-against the local database, and sends the tool results back to the model.
+into newline-delimited JSON events for the frontend. Pydantic AI owns the
+OpenRouter model protocol and tool-call loop; this module owns the local task
+tool implementations and operational logs.
 """
 
 import json
 import logging
 import time
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
-from typing import Any, cast
+from dataclasses import dataclass, field
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID, uuid4
 
-import httpx
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import Field, TypeAdapter
+from pydantic_ai import Agent, ModelSettings, RunContext, Tool, UsageLimits
+from pydantic_ai.exceptions import AgentRunError
+from pydantic_ai.messages import (
+    ModelMessage,
+    ModelRequest,
+    ModelResponse,
+    TextPart,
+    UserPromptPart,
+)
+from pydantic_ai.models.openrouter import OpenRouterModel
+from pydantic_ai.providers.openrouter import OpenRouterProvider
 
 from pystack_api.core.config import Settings
 from pystack_api.core.event_log import log_event
@@ -31,10 +41,9 @@ from pystack_api.schemas import (
 from pystack_api.services import tasks as task_service
 
 type JsonObject = dict[str, Any]
-type OpenRouterMessage = dict[str, Any]
+type ToolTraceEvent = Literal["call", "result", "error"]
 
-OPENROUTER_CHAT_COMPLETIONS_URL = "https://openrouter.ai/api/v1/chat/completions"
-MAX_TOOL_ROUNDS = 6
+MAX_MODEL_REQUESTS = 6
 SYSTEM_PROMPT = """You are the Pystack todo board assistant.
 
 You help the user inspect and update a small Kanban-style todo board.
@@ -57,11 +66,10 @@ class ToolExecutionError(Exception):
 
 
 @dataclass
-class PendingToolCall:
-    index: int
-    id: str = ""
-    name: str = ""
-    arguments_text: str = ""
+class AssistantRunState:
+    tool_call_count: int = 0
+    mutation_count: int = 0
+    pending_task_change_events: int = 0
 
 
 @dataclass(frozen=True)
@@ -70,143 +78,17 @@ class AssistantToolResult:
     mutated: bool = False
 
 
-class ListTasksArgs(BaseModel):
-    """Schema used to reject stray arguments for the zero-argument list_tasks tool."""
+@dataclass
+class AssistantDeps:
+    settings: Settings
+    connection: DatabaseConnection
+    user_id: str
+    request_id: str
+    assistant_run_id: str
+    state: AssistantRunState = field(default_factory=AssistantRunState)
 
 
-class CreateTaskArgs(BaseModel):
-    title: str = Field(min_length=1, max_length=200)
-    description: str = Field(default="", max_length=5000)
-
-
-class UpdateTaskArgs(BaseModel):
-    task_id: UUID
-    title: str | None = Field(default=None, min_length=1, max_length=200)
-    description: str | None = Field(default=None, max_length=5000)
-
-
-class MoveTaskArgs(BaseModel):
-    task_id: UUID
-    status: TaskStatus
-    position: int = Field(ge=0)
-
-
-class DeleteTaskArgs(BaseModel):
-    task_id: UUID
-
-
-TASK_TOOL_DEFINITIONS: list[JsonObject] = [
-    {
-        "type": "function",
-        "function": {
-            "name": "list_tasks",
-            "description": (
-                "List every task on the todo board, including IDs, titles, descriptions, "
-                "statuses, and positions. Call this before editing, moving, or deleting "
-                "when the user identifies a task by title or natural language."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "create_task",
-            "description": "Create a new task in the backlog column.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "description": "Short task title, 1-200 characters.",
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Optional task details or context.",
-                    },
-                },
-                "required": ["title"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "update_task",
-            "description": "Update an existing task title and/or description by task ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "The task UUID from list_tasks.",
-                    },
-                    "title": {"type": "string", "description": "New task title."},
-                    "description": {
-                        "type": "string",
-                        "description": "New task description. Use an empty string to clear it.",
-                    },
-                },
-                "required": ["task_id"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "move_task",
-            "description": "Move or reorder an existing task by task ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "The task UUID from list_tasks.",
-                    },
-                    "status": {
-                        "type": "string",
-                        "enum": [status.value for status in TaskStatus],
-                        "description": "Target board column.",
-                    },
-                    "position": {
-                        "type": "integer",
-                        "minimum": 0,
-                        "description": "Zero-based target position within the target column.",
-                    },
-                },
-                "required": ["task_id", "status", "position"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "delete_task",
-            "description": "Delete an existing task by task ID.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "task_id": {
-                        "type": "string",
-                        "format": "uuid",
-                        "description": "The task UUID from list_tasks.",
-                    }
-                },
-                "required": ["task_id"],
-                "additionalProperties": False,
-            },
-        },
-    },
-]
+ASSISTANT_TOOL_COUNT = 5
 
 
 async def stream_assistant_events(
@@ -219,17 +101,14 @@ async def stream_assistant_events(
 ) -> AsyncIterator[str]:
     """Yield frontend assistant events for one user chat request.
 
-    Each OpenRouter round can either finish with text or request local task
-    tools. Tool arguments are parsed after all streamed fragments arrive, then
-    validated with the Pydantic schemas below before touching the database.
-    The round limit prevents a bad model response from looping forever.
+    Pydantic AI handles OpenRouter streaming and model-requested tool execution.
+    We keep the frontend contract narrow: text deltas, task-change hints after
+    mutations, a final done event, or a recoverable error event.
     """
 
-    messages = _build_messages(request_messages)
     assistant_run_id = str(uuid4())
     run_started_at = time.perf_counter()
-    total_tool_calls = 0
-    mutation_count = 0
+    deps: AssistantDeps | None = None
 
     log_event(
         logging.INFO,
@@ -242,142 +121,88 @@ async def stream_assistant_events(
     )
 
     try:
-        for round_index in range(MAX_TOOL_ROUNDS):
-            text_buffer = ""
-            tool_calls: list[PendingToolCall] = []
+        prompt, message_history = _prompt_and_history(request_messages)
+        deps = AssistantDeps(
+            settings=settings,
+            connection=connection,
+            user_id=user_id,
+            request_id=request_id,
+            assistant_run_id=assistant_run_id,
+        )
+        agent = _build_agent(settings)
+        model_started_at = time.perf_counter()
+        text_char_count = 0
 
-            model_started_at = time.perf_counter()
-            log_event(
-                logging.INFO,
-                "assistant.model.started",
-                environment=settings.environment,
-                request_id=request_id,
-                assistant_run_id=assistant_run_id,
-                model=settings.assistant_model,
-                round_index=round_index,
-                message_count=len(messages),
-                available_tool_count=len(TASK_TOOL_DEFINITIONS),
-            )
-            async for chunk in _stream_openrouter_chat(settings, messages):
-                chunk_type = chunk["type"]
-                if chunk_type == "text_delta":
-                    text = cast(str, chunk["text"])
-                    text_buffer += text
-                    yield _encode_event({"type": "text_delta", "text": text})
-                elif chunk_type == "tool_calls":
-                    tool_calls = cast(list[PendingToolCall], chunk["tool_calls"])
+        log_event(
+            logging.INFO,
+            "assistant.model.started",
+            environment=settings.environment,
+            request_id=request_id,
+            assistant_run_id=assistant_run_id,
+            model=settings.assistant_model,
+            round_index=0,
+            message_count=len(request_messages),
+            available_tool_count=ASSISTANT_TOOL_COUNT,
+        )
 
-            log_event(
-                logging.INFO,
-                "assistant.model.completed",
-                environment=settings.environment,
-                request_id=request_id,
-                assistant_run_id=assistant_run_id,
-                model=settings.assistant_model,
-                round_index=round_index,
-                duration_ms=_elapsed_ms(model_started_at),
-                text_char_count=len(text_buffer),
-                tool_call_count=len(tool_calls),
-            )
-            if not tool_calls:
-                log_event(
-                    logging.INFO,
-                    "assistant.run.completed",
-                    environment=settings.environment,
-                    request_id=request_id,
-                    assistant_run_id=assistant_run_id,
-                    model=settings.assistant_model,
-                    status="ok",
-                    duration_ms=_elapsed_ms(run_started_at),
-                    rounds_used=round_index + 1,
-                    tool_call_count=total_tool_calls,
-                    mutation_count=mutation_count,
-                )
-                yield _encode_event({"type": "done"})
-                return
+        async with agent.iter(
+            prompt,
+            message_history=message_history,
+            deps=deps,
+            usage_limits=UsageLimits(request_limit=MAX_MODEL_REQUESTS),
+        ) as run:
+            # Drive the agent graph node by node instead of agent.run_stream, which
+            # streams only the final model response. When a model emits text in the
+            # same turn as a tool call, run_stream stops at that text and the tool
+            # never runs. Streaming each model-request node surfaces every turn's
+            # text while the graph still executes the tool calls between turns.
+            async for node in run:
+                if not Agent.is_model_request_node(node):
+                    continue
+                async with node.stream(run.ctx) as request_stream:
+                    async for delta in request_stream.stream_text(delta=True):
+                        for _ in range(_pop_task_change_events(deps)):
+                            yield _encode_event({"type": "tasks_changed"})
+                        if delta:
+                            text_char_count += len(delta)
+                            yield _encode_event({"type": "text_delta", "text": delta})
 
-            assistant_message: OpenRouterMessage = {
-                "role": "assistant",
-                "content": text_buffer or None,
-                "tool_calls": [_openrouter_tool_call(tool_call) for tool_call in tool_calls],
-            }
-            messages.append(assistant_message)
+            for _ in range(_pop_task_change_events(deps)):
+                yield _encode_event({"type": "tasks_changed"})
+            usage = run.usage
 
-            for tool_call in tool_calls:
-                total_tool_calls += 1
-                arguments = _parse_tool_arguments(tool_call)
-                _log_tool_trace(
-                    event="call",
-                    environment=settings.environment,
-                    request_id=request_id,
-                    assistant_run_id=assistant_run_id,
-                    model=settings.assistant_model,
-                    round_index=round_index,
-                    payload={
-                        "tool_call_id": tool_call.id,
-                        "tool_name": tool_call.name,
-                        "args": arguments,
-                    },
-                )
-
-                started_at = time.perf_counter()
-                try:
-                    result = execute_task_tool(connection, user_id, tool_call.name, arguments)
-                    tool_content: JsonObject = result.content
-                    mutated = result.mutated
-                    if mutated:
-                        mutation_count += 1
-                    _log_tool_trace(
-                        event="result",
-                        environment=settings.environment,
-                        request_id=request_id,
-                        assistant_run_id=assistant_run_id,
-                        model=settings.assistant_model,
-                        round_index=round_index,
-                        payload={
-                            "tool_call_id": tool_call.id,
-                            "tool_name": tool_call.name,
-                            "duration_ms": _elapsed_ms(started_at),
-                            "mutated": mutated,
-                            "result": tool_content,
-                        },
-                    )
-                except ToolExecutionError as exc:
-                    tool_content = {"error": str(exc)}
-                    mutated = False
-                    _log_tool_trace(
-                        event="error",
-                        environment=settings.environment,
-                        request_id=request_id,
-                        assistant_run_id=assistant_run_id,
-                        model=settings.assistant_model,
-                        round_index=round_index,
-                        payload={
-                            "tool_call_id": tool_call.id,
-                            "tool_name": tool_call.name,
-                            "duration_ms": _elapsed_ms(started_at),
-                            "error": str(exc),
-                        },
-                        is_error=True,
-                    )
-
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": json.dumps(tool_content, default=str),
-                    }
-                )
-                if mutated:
-                    yield _encode_event({"type": "tasks_changed"})
-
-        raise AssistantChatError("The assistant reached the maximum tool-call limit.")
-    except AssistantChatError as exc:
+        log_event(
+            logging.INFO,
+            "assistant.model.completed",
+            environment=settings.environment,
+            request_id=request_id,
+            assistant_run_id=assistant_run_id,
+            model=settings.assistant_model,
+            round_index=0,
+            duration_ms=_elapsed_ms(model_started_at),
+            text_char_count=text_char_count,
+            tool_call_count=deps.state.tool_call_count,
+        )
+        log_event(
+            logging.INFO,
+            "assistant.run.completed",
+            environment=settings.environment,
+            request_id=request_id,
+            assistant_run_id=assistant_run_id,
+            model=settings.assistant_model,
+            status="ok",
+            duration_ms=_elapsed_ms(run_started_at),
+            rounds_used=usage.requests,
+            tool_call_count=deps.state.tool_call_count,
+            mutation_count=deps.state.mutation_count,
+        )
+        yield _encode_event({"type": "done"})
+    except (AssistantChatError, AgentRunError) as exc:
+        if deps is not None:
+            for _ in range(_pop_task_change_events(deps)):
+                yield _encode_event({"type": "tasks_changed"})
         _log_assistant_run_error(settings, request_id, assistant_run_id, run_started_at, exc)
-        yield _encode_event({"type": "error", "message": str(exc)})
-    except httpx.HTTPError as exc:
-        _log_assistant_run_error(settings, request_id, assistant_run_id, run_started_at, exc)
-        yield _encode_event({"type": "error", "message": f"OpenRouter request failed: {exc}"})
+        yield _encode_event({"type": "error", "message": _assistant_error_message(exc)})
 
 
 def execute_task_tool(
@@ -386,22 +211,21 @@ def execute_task_tool(
     tool_name: str,
     arguments: JsonObject,
 ) -> AssistantToolResult:
-    """Validate and execute one model-requested task tool call.
+    """Execute one model-requested task tool call against the user's board.
 
-    All operations are scoped to ``user_id`` so the assistant can only inspect
-    and modify the authenticated user's own board.
+    Argument shape and constraints are enforced upstream: the agent tools below
+    declare typed, constrained parameters that Pydantic AI validates before
+    dispatching here, and the TaskCreate/TaskUpdate/TaskMove schemas validate
+    again on construction for any direct caller. All operations are scoped to
+    ``user_id`` so the assistant only touches the authenticated user's own board.
     """
 
     match tool_name:
         case "list_tasks":
-            _validate_args(ListTasksArgs, arguments)
             return AssistantToolResult(_board_payload(task_service.list_tasks(connection, user_id)))
         case "create_task":
-            create_args = _validate_args(CreateTaskArgs, arguments)
             created_task = task_service.create_task(
-                connection,
-                user_id,
-                TaskCreate(title=create_args.title, description=create_args.description),
+                connection, user_id, TaskCreate.model_validate(arguments)
             )
             return AssistantToolResult(
                 {
@@ -412,12 +236,11 @@ def execute_task_tool(
                 mutated=True,
             )
         case "update_task":
-            update_args = _validate_args(UpdateTaskArgs, arguments)
             updated_task = task_service.update_task(
                 connection,
                 user_id,
-                update_args.task_id,
-                TaskUpdate(title=update_args.title, description=update_args.description),
+                _task_id(arguments),
+                TaskUpdate.model_validate(arguments),
             )
             if updated_task is None:
                 raise ToolExecutionError("No task was found with that task_id.")
@@ -430,12 +253,11 @@ def execute_task_tool(
                 mutated=True,
             )
         case "move_task":
-            move_args = _validate_args(MoveTaskArgs, arguments)
             moved_task = task_service.move_task(
                 connection,
                 user_id,
-                move_args.task_id,
-                TaskMove(status=move_args.status, position=move_args.position),
+                _task_id(arguments),
+                TaskMove.model_validate(arguments),
             )
             if moved_task is None:
                 raise ToolExecutionError("No task was found with that task_id.")
@@ -448,8 +270,7 @@ def execute_task_tool(
                 mutated=True,
             )
         case "delete_task":
-            delete_args = _validate_args(DeleteTaskArgs, arguments)
-            if not task_service.delete_task(connection, user_id, delete_args.task_id):
+            if not task_service.delete_task(connection, user_id, _task_id(arguments)):
                 raise ToolExecutionError("No task was found with that task_id.")
             return AssistantToolResult(
                 {
@@ -462,102 +283,219 @@ def execute_task_tool(
             raise ToolExecutionError(f"Unknown tool: {tool_name}")
 
 
-async def _stream_openrouter_chat(
-    settings: Settings,
-    messages: list[OpenRouterMessage],
-) -> AsyncIterator[JsonObject]:
-    """Yield normalized chunks from OpenRouter's streamed SSE response.
+def _build_agent(settings: Settings) -> Agent[AssistantDeps, str]:
+    if settings.openrouter_api_key is None:
+        raise AssistantChatError(
+            "Assistant chat requires PYSTACK_OPENROUTER_API_KEY or OPENROUTER_API_KEY."
+        )
 
-    OpenRouter streams Server-Sent Events where each `data:` line holds a chat
-    completion chunk. Text can be yielded immediately, but tool calls arrive as
-    fragments: the function name and argument JSON can be split across multiple
-    deltas. This function therefore keeps a `PendingToolCall` per provider
-    index, appends fragments as they arrive, and emits a normalized `tool_calls`
-    event only once OpenRouter reports `finish_reason == "tool_calls"` or the
-    stream ends. Final argument parsing and Pydantic validation happen later in
-    `execute_task_tool`, after the complete argument string exists.
+    model = OpenRouterModel(
+        settings.assistant_model,
+        provider=OpenRouterProvider(api_key=settings.openrouter_api_key, app_title="Pystack"),
+    )
+    return Agent[AssistantDeps, str](
+        model,
+        deps_type=AssistantDeps,
+        output_type=str,
+        instructions=SYSTEM_PROMPT,
+        model_settings=ModelSettings(temperature=0.2, parallel_tool_calls=False),
+        tools=_assistant_tools(),
+    )
+
+
+def _assistant_tools() -> list[Tool[AssistantDeps]]:
+    return [
+        Tool(
+            list_tasks,
+            takes_ctx=True,
+            name="list_tasks",
+            description=(
+                "List every task on the todo board, including IDs, titles, descriptions, "
+                "statuses, and positions. Call this before editing, moving, or deleting "
+                "when the user identifies a task by title or natural language."
+            ),
+        ),
+        Tool(
+            create_task,
+            takes_ctx=True,
+            name="create_task",
+            description="Create a new task in the backlog column.",
+        ),
+        Tool(
+            update_task,
+            takes_ctx=True,
+            name="update_task",
+            description="Update an existing task title and/or description by task ID.",
+        ),
+        Tool(
+            move_task,
+            takes_ctx=True,
+            name="move_task",
+            description="Move or reorder an existing task by task ID.",
+        ),
+        Tool(
+            delete_task,
+            takes_ctx=True,
+            name="delete_task",
+            description="Delete an existing task by task ID.",
+        ),
+    ]
+
+
+def list_tasks(ctx: RunContext[AssistantDeps]) -> JsonObject:
+    """List every task on the user's board."""
+
+    return _execute_agent_tool(ctx, "list_tasks", {})
+
+
+# The parameter constraints below mirror the TaskCreate/TaskUpdate/TaskMove
+# schemas. They live on the signatures so Pydantic AI both advertises them to the
+# model in each tool's JSON schema and rejects invalid arguments before dispatch,
+# which is why execute_task_tool no longer re-validates.
+_TaskId = Annotated[UUID, Field(description="The task UUID from list_tasks.")]
+
+
+def create_task(
+    ctx: RunContext[AssistantDeps],
+    title: Annotated[
+        str, Field(min_length=1, max_length=200, description="Short task title, 1-200 characters.")
+    ],
+    description: Annotated[
+        str, Field(max_length=5000, description="Optional task details or context.")
+    ] = "",
+) -> JsonObject:
+    """Create a backlog task."""
+
+    return _execute_agent_tool(ctx, "create_task", {"title": title, "description": description})
+
+
+def update_task(
+    ctx: RunContext[AssistantDeps],
+    task_id: _TaskId,
+    title: Annotated[
+        str | None, Field(min_length=1, max_length=200, description="New task title.")
+    ] = None,
+    description: Annotated[
+        str | None,
+        Field(max_length=5000, description="New description. Use an empty string to clear it."),
+    ] = None,
+) -> JsonObject:
+    """Update a task's title or description by UUID."""
+
+    arguments: JsonObject = {"task_id": task_id}
+    if title is not None:
+        arguments["title"] = title
+    if description is not None:
+        arguments["description"] = description
+    return _execute_agent_tool(ctx, "update_task", arguments)
+
+
+def move_task(
+    ctx: RunContext[AssistantDeps],
+    task_id: _TaskId,
+    status: Annotated[TaskStatus, Field(description="Target board column.")],
+    position: Annotated[
+        int, Field(ge=0, description="Zero-based target position within the target column.")
+    ],
+) -> JsonObject:
+    """Move a task by UUID to a status and zero-based position."""
+
+    return _execute_agent_tool(
+        ctx,
+        "move_task",
+        {"task_id": task_id, "status": status, "position": position},
+    )
+
+
+def delete_task(ctx: RunContext[AssistantDeps], task_id: _TaskId) -> JsonObject:
+    """Delete a task by UUID."""
+
+    return _execute_agent_tool(ctx, "delete_task", {"task_id": task_id})
+
+
+def _execute_agent_tool(
+    ctx: RunContext[AssistantDeps],
+    tool_name: str,
+    arguments: JsonObject,
+) -> JsonObject:
+    deps = ctx.deps
+    deps.state.tool_call_count += 1
+    tool_call_id = ctx.tool_call_id or f"{tool_name}-{deps.state.tool_call_count}"
+    started_at = time.perf_counter()
+
+    _log_tool_trace(
+        event="call",
+        environment=deps.settings.environment,
+        request_id=deps.request_id,
+        assistant_run_id=deps.assistant_run_id,
+        model=deps.settings.assistant_model,
+        round_index=0,
+        payload={
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "args": arguments,
+        },
+    )
+
+    try:
+        result = execute_task_tool(deps.connection, deps.user_id, tool_name, arguments)
+    except ToolExecutionError as exc:
+        _log_tool_trace(
+            event="error",
+            environment=deps.settings.environment,
+            request_id=deps.request_id,
+            assistant_run_id=deps.assistant_run_id,
+            model=deps.settings.assistant_model,
+            round_index=0,
+            payload={
+                "tool_call_id": tool_call_id,
+                "tool_name": tool_name,
+                "duration_ms": _elapsed_ms(started_at),
+                "error": str(exc),
+            },
+            is_error=True,
+        )
+        return {"error": str(exc)}
+
+    if result.mutated:
+        deps.state.mutation_count += 1
+        deps.state.pending_task_change_events += 1
+    _log_tool_trace(
+        event="result",
+        environment=deps.settings.environment,
+        request_id=deps.request_id,
+        assistant_run_id=deps.assistant_run_id,
+        model=deps.settings.assistant_model,
+        round_index=0,
+        payload={
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "duration_ms": _elapsed_ms(started_at),
+            "mutated": result.mutated,
+            "result": result.content,
+        },
+    )
+    return result.content
+
+
+def _pop_task_change_events(deps: AssistantDeps) -> int:
+    pending = deps.state.pending_task_change_events
+    deps.state.pending_task_change_events = 0
+    return pending
+
+
+_TASK_ID_ADAPTER = TypeAdapter(UUID)
+
+
+def _task_id(arguments: JsonObject) -> UUID:
+    """Coerce the dict task_id to a UUID.
+
+    The agent tools already pass a UUID; direct callers (and the model) may pass
+    a string. TaskUpdate/TaskMove carry the other fields but not the id, so it is
+    pulled out and coerced here.
     """
 
-    headers = {
-        "Authorization": f"Bearer {settings.openrouter_api_key}",
-        "Content-Type": "application/json",
-        "X-OpenRouter-Title": "Pystack",
-    }
-    payload: JsonObject = {
-        "model": settings.assistant_model,
-        "messages": messages,
-        "tools": TASK_TOOL_DEFINITIONS,
-        "tool_choice": "auto",
-        "parallel_tool_calls": False,
-        "stream": True,
-        "temperature": 0.2,
-    }
-    timeout = httpx.Timeout(connect=30.0, read=90.0, write=10.0, pool=10.0)
-
-    async with (
-        httpx.AsyncClient(timeout=timeout) as client,
-        client.stream(
-            "POST",
-            OPENROUTER_CHAT_COMPLETIONS_URL,
-            headers=headers,
-            json=payload,
-        ) as response,
-    ):
-        if response.status_code >= 400:
-            body = await response.aread()
-            raise AssistantChatError(_openrouter_error_message(response.status_code, body))
-
-        tool_calls_by_index: dict[int, PendingToolCall] = {}
-        async for line in response.aiter_lines():
-            if not line or line.startswith(":"):
-                continue
-            if not line.startswith("data: "):
-                continue
-
-            data = line.removeprefix("data: ").strip()
-            if data == "[DONE]":
-                break
-
-            chunk = _load_sse_json(data)
-            error = chunk.get("error")
-            if isinstance(error, dict):
-                raise AssistantChatError(str(error.get("message", "OpenRouter stream failed.")))
-
-            choice = _first_choice(chunk)
-            if choice is None:
-                continue
-
-            delta = choice.get("delta")
-            if not isinstance(delta, dict):
-                continue
-
-            content = delta.get("content")
-            if isinstance(content, str) and content:
-                yield {"type": "text_delta", "text": content}
-
-            # Tool call fields are streamed piecemeal, so collect them by
-            # provider index until the finish reason says the call is complete.
-            _accumulate_tool_calls(delta, tool_calls_by_index)
-
-            finish_reason = choice.get("finish_reason") or delta.get("finish_reason")
-            if finish_reason == "tool_calls":
-                yield {
-                    "type": "tool_calls",
-                    "tool_calls": _normalize_tool_calls(tool_calls_by_index),
-                }
-
-        if tool_calls_by_index:
-            yield {
-                "type": "tool_calls",
-                "tool_calls": _normalize_tool_calls(tool_calls_by_index),
-            }
-
-
-def _validate_args[T: BaseModel](model: type[T], arguments: JsonObject) -> T:
-    try:
-        return model.model_validate(arguments)
-    except ValidationError as exc:
-        raise ToolExecutionError(exc.errors(include_url=False)) from exc
+    return _TASK_ID_ADAPTER.validate_python(arguments["task_id"])
 
 
 def _board_payload(tasks: list[TaskRead]) -> JsonObject:
@@ -584,36 +522,28 @@ def _task_payload(task: TaskRead) -> JsonObject:
     }
 
 
-def _build_messages(request_messages: list[AssistantChatMessage]) -> list[OpenRouterMessage]:
-    messages: list[OpenRouterMessage] = [{"role": "system", "content": SYSTEM_PROMPT}]
+def _prompt_and_history(
+    request_messages: list[AssistantChatMessage],
+) -> tuple[str, list[ModelMessage]]:
+    if not request_messages:
+        raise AssistantChatError("Assistant request requires at least one message.")
+
+    current_message = request_messages[-1]
+    if current_message.role != "user":
+        raise AssistantChatError("Assistant request must end with a user message.")
+
+    return current_message.content, _message_history(request_messages[:-1])
+
+
+def _message_history(request_messages: list[AssistantChatMessage]) -> list[ModelMessage]:
+    messages: list[ModelMessage] = []
     for message in request_messages:
-        messages.append({"role": message.role, "content": message.content})
+        match message.role:
+            case "user":
+                messages.append(ModelRequest(parts=[UserPromptPart(content=message.content)]))
+            case "assistant":
+                messages.append(ModelResponse(parts=[TextPart(content=message.content)]))
     return messages
-
-
-def _openrouter_tool_call(tool_call: PendingToolCall) -> JsonObject:
-    return {
-        "id": tool_call.id,
-        "type": "function",
-        "function": {
-            "name": tool_call.name,
-            "arguments": tool_call.arguments_text or "{}",
-        },
-    }
-
-
-def _parse_tool_arguments(tool_call: PendingToolCall) -> JsonObject:
-    if not tool_call.name:
-        raise AssistantChatError("OpenRouter returned a tool call without a tool name.")
-
-    try:
-        parsed = json.loads(tool_call.arguments_text or "{}")
-    except json.JSONDecodeError as exc:
-        raise AssistantChatError(f"Could not parse tool arguments for {tool_call.name}.") from exc
-
-    if not isinstance(parsed, dict):
-        raise AssistantChatError(f"Tool arguments for {tool_call.name} were not an object.")
-    return cast(JsonObject, parsed)
 
 
 def _elapsed_ms(started_at: float) -> float:
@@ -641,9 +571,15 @@ def _log_assistant_run_error(
     )
 
 
+def _assistant_error_message(exc: AssistantChatError | AgentRunError) -> str:
+    if isinstance(exc, AgentRunError):
+        return f"Assistant model request failed: {exc}"
+    return str(exc)
+
+
 def _log_tool_trace(
     *,
-    event: str,
+    event: ToolTraceEvent,
     environment: str,
     request_id: str,
     assistant_run_id: str,
@@ -674,15 +610,21 @@ def _tool_trace_summary(payload: JsonObject) -> JsonObject:
         if key in payload:
             summary[key] = payload[key]
 
-    args = payload.get("args")
-    if isinstance(args, dict):
+    args = _as_json_object(payload.get("args"))
+    if args is not None:
         summary["tool_args"] = _summarize_tool_args(args)
 
-    result = payload.get("result")
-    if isinstance(result, dict):
+    result = _as_json_object(payload.get("result"))
+    if result is not None:
         summary["tool_result"] = _summarize_tool_result(result)
 
     return summary
+
+
+def _as_json_object(value: object) -> JsonObject | None:
+    if isinstance(value, dict):
+        return cast(JsonObject, value)
+    return None
 
 
 def _summarize_tool_args(args: JsonObject) -> JsonObject:
@@ -702,8 +644,8 @@ def _summarize_tool_args(args: JsonObject) -> JsonObject:
 def _summarize_tool_result(result: JsonObject) -> JsonObject:
     summary: JsonObject = {}
 
-    task = result.get("task")
-    if isinstance(task, dict):
+    task = _as_json_object(result.get("task"))
+    if task is not None:
         for source_key, summary_key in (
             ("id", "task_id"),
             ("status", "task_status"),
@@ -712,104 +654,17 @@ def _summarize_tool_result(result: JsonObject) -> JsonObject:
             if source_key in task:
                 summary[summary_key] = task[source_key]
 
-    board = result.get("board") if isinstance(result.get("board"), dict) else result
-    if isinstance(board, dict):
-        if "total" in board:
-            summary["board_total"] = board["total"]
-        counts = board.get("counts")
-        if isinstance(counts, dict):
-            summary["board_counts"] = counts
+    result_board = _as_json_object(result.get("board"))
+    board = result_board if result_board is not None else result
+    if "total" in board:
+        summary["board_total"] = board["total"]
+    counts = _as_json_object(board.get("counts"))
+    if counts is not None:
+        summary["board_counts"] = counts
 
     if not summary and result:
         summary["keys"] = sorted(result)
     return summary
-
-
-def _accumulate_tool_calls(
-    delta: JsonObject,
-    tool_calls_by_index: dict[int, PendingToolCall],
-) -> None:
-    tool_calls = delta.get("tool_calls")
-    if not isinstance(tool_calls, list):
-        return
-
-    for raw_tool_call in tool_calls:
-        if not isinstance(raw_tool_call, dict):
-            continue
-        index = _tool_call_index(raw_tool_call)
-        tool_call = tool_calls_by_index.setdefault(index, PendingToolCall(index=index))
-
-        tool_call_id = raw_tool_call.get("id")
-        if isinstance(tool_call_id, str) and tool_call_id:
-            tool_call.id = tool_call_id
-
-        function = raw_tool_call.get("function")
-        if not isinstance(function, dict):
-            continue
-
-        name = function.get("name")
-        if isinstance(name, str) and name:
-            tool_call.name += name
-
-        arguments = function.get("arguments")
-        if isinstance(arguments, str) and arguments:
-            tool_call.arguments_text += arguments
-
-
-def _normalize_tool_calls(
-    tool_calls_by_index: dict[int, PendingToolCall],
-) -> list[PendingToolCall]:
-    tool_calls = sorted(tool_calls_by_index.values(), key=lambda tool_call: tool_call.index)
-    for tool_call in tool_calls:
-        if not tool_call.id:
-            tool_call.id = f"tool_call_{tool_call.index}"
-    return tool_calls
-
-
-def _tool_call_index(raw_tool_call: JsonObject) -> int:
-    index = raw_tool_call.get("index")
-    if isinstance(index, int):
-        return index
-    return 0
-
-
-def _load_sse_json(data: str) -> JsonObject:
-    try:
-        parsed = json.loads(data)
-    except json.JSONDecodeError as exc:
-        raise AssistantChatError("OpenRouter returned malformed stream data.") from exc
-    if not isinstance(parsed, dict):
-        raise AssistantChatError("OpenRouter returned unexpected stream data.")
-    return cast(JsonObject, parsed)
-
-
-def _first_choice(chunk: JsonObject) -> JsonObject | None:
-    choices = chunk.get("choices")
-    if not isinstance(choices, list) or not choices:
-        return None
-    choice = choices[0]
-    if not isinstance(choice, dict):
-        return None
-    return cast(JsonObject, choice)
-
-
-def _openrouter_error_message(status_code: int, body: bytes) -> str:
-    try:
-        payload = json.loads(body.decode("utf-8"))
-    except UnicodeDecodeError, json.JSONDecodeError:
-        return f"OpenRouter request failed with HTTP {status_code}."
-
-    if isinstance(payload, dict):
-        error = payload.get("error")
-        if isinstance(error, dict):
-            message = error.get("message")
-            if isinstance(message, str):
-                return message
-        detail = payload.get("detail")
-        if isinstance(detail, str):
-            return detail
-
-    return f"OpenRouter request failed with HTTP {status_code}."
 
 
 def _encode_event(event: JsonObject) -> str:
