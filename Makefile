@@ -11,7 +11,7 @@ DBMATE_DEV_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_dev
 DBMATE_TEST_DATABASE_URL := postgres://pystack:pystack@localhost:5432/pystack_test?sslmode=disable
 PROD_DATABASE_URL_CMD := uv run --project $(BACKEND_DIR) python scripts/render_database_url.py
 
-.PHONY: help check-tools setup backend-sync frontend-install db-up db-down \
+.PHONY: help check-tools doctor doctor-dev doctor-services setup backend-sync frontend-install db-up db-down \
 	db-migrate db-migrate-dev db-migrate-test db-reset db-reset-dev \
 	db-reset-test db-status db-status-prod db-migrate-prod psql-prod db-dump-schema \
 	infra \
@@ -30,6 +30,15 @@ check-tools: ## Verify required machine-level tools are installed
 	done
 	@node -e 'const [major, minor] = process.versions.node.split(".").map(Number); if (major < 24 || (major === 24 && minor < 16)) { console.error(`Node 24.16+ is required; found $${process.versions.node}`); process.exit(1); }'
 	@$(COMPOSE) version >/dev/null
+
+doctor: ## Validate local development and hosted service setup
+	uv run --project $(BACKEND_DIR) python scripts/doctor.py all
+
+doctor-dev: ## Validate local development setup
+	uv run --project $(BACKEND_DIR) python scripts/doctor.py dev
+
+doctor-services: ## Validate GitHub and Render deployment setup
+	uv run --project $(BACKEND_DIR) python scripts/doctor.py services
 
 setup: check-tools backend-sync frontend-install pre-commit-install db-up db-migrate generate-api ## Set up a new development checkout
 	@echo "Setup complete. Run 'make dev' to start the application."
