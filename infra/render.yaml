@@ -12,7 +12,9 @@ services:
     rootDir: backend
     plan: free
     region: virginia
-    autoDeployTrigger: commit
+    # Free-tier migration gate: GitHub Actions runs DBmate after checks pass,
+    # then Render deploys this commit once the full check suite is green.
+    autoDeployTrigger: checksPass
     buildCommand: uv sync --frozen --no-dev
     startCommand: .venv/bin/uvicorn pystack_api.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/v1/health
@@ -46,7 +48,8 @@ services:
     repo: https://github.com/akurilin/pystack
     branch: main
     rootDir: frontend
-    autoDeployTrigger: commit
+    # Keep frontend and backend releases aligned behind the same CI gate.
+    autoDeployTrigger: checksPass
     buildCommand: npm ci && npm run build
     staticPublishPath: dist
     # Single-page app: serve index.html for client-side routes (e.g. /board) so a

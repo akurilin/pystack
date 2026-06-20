@@ -11,7 +11,9 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Do not cancel production migrations mid-flight on main; PR checks can still
+  # be superseded by newer pushes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
@@ -116,3 +118,44 @@ jobs:
           CLERK_TEST_USER_USERNAME: ${{ secrets.CLERK_TEST_USER_USERNAME }}
           CLERK_TEST_USER_PASSWORD: ${{ secrets.CLERK_TEST_USER_PASSWORD }}
         run: make test-e2e
+
+  production-migrations:
+    name: Production DB Migrations
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [check, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Install Python runtime
+        run: uv python install 3.14
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.25.x
+          cache: false
+
+      - name: Install dbmate
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install github.com/amacneil/dbmate/v2@v2.30.0
+
+      - name: Apply production migrations
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          DBMATE_PROD_DATABASE_URL: ${{ secrets.DBMATE_PROD_DATABASE_URL }}
+        run: |
+          if [ -z "${RENDER_API_KEY:-}" ] && [ -z "${DBMATE_PROD_DATABASE_URL:-}" ]; then
+            echo "::error::Set RENDER_API_KEY or DBMATE_PROD_DATABASE_URL so CI can migrate production before Render deploys."
+            exit 1
+          fi
+          make db-migrate-prod
