@@ -20,6 +20,30 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: migration_smoke_tests; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.migration_smoke_tests (
+    id bigint NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: migration_smoke_tests_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+ALTER TABLE public.migration_smoke_tests ALTER COLUMN id ADD GENERATED ALWAYS AS IDENTITY (
+    SEQUENCE NAME public.migration_smoke_tests_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1
+);
+
+
+--
 -- Name: schema_migrations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -44,6 +68,14 @@ CREATE TABLE public.tasks (
     CONSTRAINT ck_tasks_position_nonnegative CHECK (("position" >= 0)),
     CONSTRAINT ck_tasks_status CHECK (((status)::text = ANY ((ARRAY['backlog'::character varying, 'ready'::character varying, 'in_progress'::character varying, 'review'::character varying, 'done'::character varying])::text[])))
 );
+
+
+--
+-- Name: migration_smoke_tests migration_smoke_tests_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.migration_smoke_tests
+    ADD CONSTRAINT migration_smoke_tests_pkey PRIMARY KEY (id);
 
 
 --
@@ -84,4 +116,5 @@ ALTER TABLE ONLY public.tasks
 INSERT INTO public.schema_migrations (version) VALUES
     ('20260615000100'),
     ('20260617120000'),
-    ('20260618162000');
+    ('20260618162000'),
+    ('20260620170000');
