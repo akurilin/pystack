@@ -21,6 +21,8 @@
 
 ## Database
 
+- Our migrations get automatically applied to production at successful CI run
+  completion on main
 
 ## Testing
 
