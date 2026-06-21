@@ -31,10 +31,11 @@ target that reconciles post-creation settings.
 **Backend**
 
 - [FastAPI](https://fastapi.tiangolo.com/) and [Pydantic](https://docs.pydantic.dev/) — HTTP layer and request/response models
+- [Pydantic AI](https://ai.pydantic.dev/) — assistant agent orchestration, typed tool schemas, and OpenRouter streaming
 - [Psycopg 3](https://www.psycopg.org/psycopg3/) — PostgreSQL access through dedicated query modules instead of an ORM
 - [DBmate](https://github.com/amacneil/dbmate) — schema migrations as plain SQL, with a committed `db/schema.sql` snapshot
 - [uv](https://docs.astral.sh/uv/) — manages the Python runtime and dependencies
-- [Ruff](https://docs.astral.sh/ruff/) and [mypy](https://mypy-lang.org/) — linting, formatting, and strict type checking
+- [Ruff](https://docs.astral.sh/ruff/), [mypy](https://mypy-lang.org/), and [Pyright](https://microsoft.github.io/pyright/) — linting, formatting, and strict type checking
 - [pytest](https://docs.pytest.org/) — integration tests that plan every registered query against a migrated test database
 - [Clerk](https://clerk.com/) — authentication; the backend verifies session tokens and scopes every request to the signed-in user
 - [Sentry](https://sentry.io/) — optional error monitoring, initialized only when a DSN is configured
@@ -248,8 +249,12 @@ repository secrets of the same names.
 ## Assistant
 
 The board includes an Assistant chat pane that can inspect and mutate tasks
-through backend tool calls. `.env.example` is the versioned template with safe
-defaults; copy those values into ignored `.env` for local settings and secrets.
+through backend tool calls. The backend assistant is built with
+[Pydantic AI](https://ai.pydantic.dev/): it defines the agent, validates typed
+tool arguments, streams OpenRouter model responses, and runs model-requested
+task operations against the same user-scoped task service as the REST API.
+`.env.example` is the versioned template with safe defaults; copy those values
+into ignored `.env` for local settings and secrets.
 
 The API validates assistant configuration during startup and refuses to boot
 without an OpenRouter API key, set in `.env`:
