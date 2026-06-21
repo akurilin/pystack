@@ -6,8 +6,8 @@ from typing import cast
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from pydantic_ai import Agent
 from pydantic_ai.messages import ModelMessage, ModelResponse
+from pydantic_ai.models import Model
 from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls, FunctionModel
 from pydantic_ai.models.test import TestModel
 
@@ -30,17 +30,13 @@ def test_assistant_chat_logs_request_scoped_tool_events(
     event_logger.addHandler(caplog.handler)
     caplog.set_level(logging.INFO, logger="pystack_api.events")
 
-    # This is intentionally a one-off seam for this single logging test: we want
-    # to hit the real API route and streaming loop without opening a database or
-    # calling OpenRouter. If more assistant tests need the same patching, promote
-    # these edges into injected Protocols (for example AssistantModelClient and
-    # AssistantToolExecutor) and override them with FastAPI dependency_overrides
-    # instead of monkeypatching private service functions.
-    monkeypatch.setattr(assistant_service, "_build_agent", _fake_build_agent)
+    # The model provider is overridden through FastAPI DI so this test never
+    # calls OpenRouter. The tool executor is still faked because this unit test
+    # is about request-scoped assistant logs, not database behavior.
     monkeypatch.setattr(assistant_service, "execute_task_tool", _fake_execute_task_tool)
 
     try:
-        response = _client().post(
+        response = _client(_fake_model_factory).post(
             "/api/v1/assistant/chat",
             headers={"X-Request-ID": request_id},
             json={"messages": [{"role": "user", "content": "List my tasks"}]},
@@ -86,10 +82,9 @@ def test_assistant_runs_tool_when_model_emits_preamble_text(
         tool_calls.append(tool_name)
         return assistant_service.AssistantToolResult({"tasks": [], "total": 0})
 
-    monkeypatch.setattr(assistant_service, "_build_agent", _fake_build_agent_with_preamble)
     monkeypatch.setattr(assistant_service, "execute_task_tool", recording_execute_task_tool)
 
-    response = _client().post(
+    response = _client(_fake_preamble_model_factory).post(
         "/api/v1/assistant/chat",
         json={"messages": [{"role": "user", "content": "List my tasks"}]},
     )
@@ -106,7 +101,7 @@ def test_assistant_runs_tool_when_model_emits_preamble_text(
     assert streamed_text == "Let me check your tasks. You have 0 tasks."
 
 
-def _client() -> TestClient:
+def _client(model_factory: assistant_service.AssistantModelFactory) -> TestClient:
     settings = Settings(
         openrouter_api_key="test-openrouter-key",
         clerk_secret_key="sk_test_dummy",  # noqa: S106 - inert test credential.
@@ -118,6 +113,7 @@ def _client() -> TestClient:
     app.include_router(api_router, prefix=settings.api_prefix)
     app.dependency_overrides[get_current_user_id] = lambda: "user_test"
     app.dependency_overrides[get_connection] = _fake_connection
+    app.dependency_overrides[assistant_service.get_assistant_model_factory] = lambda: model_factory
     return TestClient(app)
 
 
@@ -125,21 +121,11 @@ def _fake_connection() -> Generator[DatabaseConnection]:
     yield cast(DatabaseConnection, object())
 
 
-def _fake_build_agent(
-    settings: Settings,
-) -> Agent[assistant_service.AssistantDeps, str]:
-    return Agent[assistant_service.AssistantDeps, str](
-        TestModel(call_tools=["list_tasks"], custom_output_text="Done"),
-        deps_type=assistant_service.AssistantDeps,
-        output_type=str,
-        instructions=assistant_service.SYSTEM_PROMPT,
-        tools=assistant_service._assistant_tools(),
-    )
+def _fake_model_factory(_settings: Settings) -> Model:
+    return TestModel(call_tools=["list_tasks"], custom_output_text="Done")
 
 
-def _fake_build_agent_with_preamble(
-    settings: Settings,
-) -> Agent[assistant_service.AssistantDeps, str]:
+def _fake_preamble_model_factory(_settings: Settings) -> Model:
     async def stream_model(
         messages: list[ModelMessage], info: AgentInfo
     ) -> AsyncIterator[str | DeltaToolCalls]:
@@ -151,13 +137,7 @@ def _fake_build_agent_with_preamble(
             yield "Let me check your tasks. "
             yield {0: DeltaToolCall(name="list_tasks", json_args="{}")}
 
-    return Agent[assistant_service.AssistantDeps, str](
-        FunctionModel(stream_function=stream_model),
-        deps_type=assistant_service.AssistantDeps,
-        output_type=str,
-        instructions=assistant_service.SYSTEM_PROMPT,
-        tools=assistant_service._assistant_tools(),
-    )
+    return FunctionModel(stream_function=stream_model)
 
 
 def _fake_execute_task_tool(

@@ -9,7 +9,7 @@ tool implementations and operational logs.
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, cast
 from uuid import UUID, uuid4
@@ -24,6 +24,7 @@ from pydantic_ai.messages import (
     TextPart,
     UserPromptPart,
 )
+from pydantic_ai.models import Model
 from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
@@ -89,6 +90,34 @@ class AssistantDeps:
 
 
 ASSISTANT_TOOL_COUNT = 5
+type AssistantModelFactory = Callable[[Settings], Model]
+
+
+def build_openrouter_model(settings: Settings) -> Model:
+    """Build the production model provider used by the assistant."""
+
+    if settings.openrouter_api_key is None:
+        raise AssistantChatError(
+            "Assistant chat requires PYSTACK_OPENROUTER_API_KEY or OPENROUTER_API_KEY."
+        )
+
+    return OpenRouterModel(
+        settings.assistant_model,
+        provider=OpenRouterProvider(api_key=settings.openrouter_api_key, app_title="Pystack"),
+    )
+
+
+def get_assistant_model_factory() -> AssistantModelFactory:
+    """FastAPI dependency for the assistant's external model boundary.
+
+    Tests should override this dependency with a factory that returns Pydantic
+    AI's FunctionModel/TestModel. That keeps the agent setup, tool definitions,
+    streaming loop, and local task tools real while avoiding OpenRouter network
+    calls. Keep the seam at the model boundary unless production code needs a
+    broader abstraction.
+    """
+
+    return build_openrouter_model
 
 
 async def stream_assistant_events(
@@ -98,6 +127,7 @@ async def stream_assistant_events(
     user_id: str,
     request_id: str,
     request_messages: list[AssistantChatMessage],
+    model_factory: AssistantModelFactory = build_openrouter_model,
 ) -> AsyncIterator[str]:
     """Yield frontend assistant events for one user chat request.
 
@@ -129,7 +159,7 @@ async def stream_assistant_events(
             request_id=request_id,
             assistant_run_id=assistant_run_id,
         )
-        agent = _build_agent(settings)
+        agent = _build_agent(settings, model_factory)
         model_started_at = time.perf_counter()
         text_char_count = 0
 
@@ -283,18 +313,12 @@ def execute_task_tool(
             raise ToolExecutionError(f"Unknown tool: {tool_name}")
 
 
-def _build_agent(settings: Settings) -> Agent[AssistantDeps, str]:
-    if settings.openrouter_api_key is None:
-        raise AssistantChatError(
-            "Assistant chat requires PYSTACK_OPENROUTER_API_KEY or OPENROUTER_API_KEY."
-        )
-
-    model = OpenRouterModel(
-        settings.assistant_model,
-        provider=OpenRouterProvider(api_key=settings.openrouter_api_key, app_title="Pystack"),
-    )
+def _build_agent(
+    settings: Settings,
+    model_factory: AssistantModelFactory = build_openrouter_model,
+) -> Agent[AssistantDeps, str]:
     return Agent[AssistantDeps, str](
-        model,
+        model_factory(settings),
         deps_type=AssistantDeps,
         output_type=str,
         instructions=SYSTEM_PROMPT,

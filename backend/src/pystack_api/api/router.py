@@ -1,8 +1,8 @@
 from http import HTTPStatus
-from typing import cast
+from typing import Annotated, cast
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from pystack_api.api.auth import UserIdDependency
@@ -21,6 +21,10 @@ from pystack_api.services import assistant as assistant_service
 from pystack_api.services import tasks as task_service
 
 api_router = APIRouter()
+AssistantModelFactoryDependency = Annotated[
+    assistant_service.AssistantModelFactory,
+    Depends(assistant_service.get_assistant_model_factory),
+]
 
 
 @api_router.get("/health", operation_id="getHealth", response_model=HealthStatus, tags=["health"])
@@ -127,6 +131,7 @@ def chat_with_assistant(
     payload: AssistantChatRequest,
     connection: ConnectionDependency,
     user_id: UserIdDependency,
+    model_factory: AssistantModelFactoryDependency,
     request: Request,
 ) -> StreamingResponse:
     settings = cast(Settings, request.app.state.settings)
@@ -138,6 +143,7 @@ def chat_with_assistant(
             user_id=user_id,
             request_id=request_id if isinstance(request_id, str) else "unknown",
             request_messages=payload.messages,
+            model_factory=model_factory,
         ),
         media_type="application/x-ndjson",
     )
