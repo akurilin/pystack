@@ -3,6 +3,7 @@
 - Do not over-engineer, prematurely abstract, prematurely optimize or future-proof.
   Use simple, elegant, maintainable solutions.
 - Add comments and documentaiton to solutions that may be non-obvious to future readers.
+- Work in a red-green-refactor style
 
 ## Commits
 
