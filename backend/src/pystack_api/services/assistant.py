@@ -227,6 +227,28 @@ async def stream_assistant_events(
             mutation_count=deps.state.mutation_count,
         )
         yield _encode_event({"type": "done"})
+    # Failures during a run collapse into two families:
+    #   * AssistantChatError — our own request validation (empty history, last
+    #     message not from the user). Raised before the model is ever called.
+    #   * AgentRunError — Pydantic AI's base for anything that goes wrong during
+    #     the run. The subclasses we can expect, mostly from OpenRouter:
+    #       - ModelHTTPError: a 4xx/5xx from OpenRouter. Carries the status code
+    #         and raw response body (both are folded into str(exc), so they land
+    #         in the log). Covers auth (401/403: bad or revoked key), rate limits
+    #         / spent quota (429, easy to hit on the free-tier default model),
+    #         bad requests (400: unknown or deactivated model, context length
+    #         exceeded), and provider outages (5xx, or no upstream provider
+    #         available for the model).
+    #       - UsageLimitExceeded: our own MAX_MODEL_REQUESTS cap tripped by a
+    #         tool loop that won't terminate — not an OpenRouter failure.
+    #       - UnexpectedModelBehavior / IncompleteToolCall: malformed or
+    #         truncated model output (e.g. a tool call cut off by the token
+    #         limit). str(exc) includes the response body when available.
+    #       - ContentFilterError: the provider filtered the response, leaving it
+    #         empty.
+    #     Lower-level causes (e.g. a wrapped httpx network error — timeout,
+    #     connection refused, DNS failure) are captured via exc.__cause__ in the
+    #     log below.
     except (AssistantChatError, AgentRunError) as exc:
         if deps is not None:
             for _ in range(_pop_task_change_events(deps)):
@@ -591,11 +613,20 @@ def _log_assistant_run_error(
         status="error",
         duration_ms=_elapsed_ms(started_at),
         error_type=exc.__class__.__name__,
+        # str(exc) already embeds the OpenRouter status code and response body
+        # for ModelHTTPError / UnexpectedModelBehavior. __cause__ catches the
+        # case where the real reason is a lower-level error Pydantic AI wrapped
+        # (e.g. a raw httpx network failure); it drops to None otherwise.
         error_message=str(exc),
+        error_cause=repr(exc.__cause__) if exc.__cause__ is not None else None,
     )
 
 
 def _assistant_error_message(exc: AssistantChatError | AgentRunError) -> str:
+    # Every model failure currently collapses to one generic client message. The
+    # detailed reason (status code, body, cause) is in the logs only. Mapping the
+    # known error families to clearer user-facing messages is tracked in
+    # https://github.com/akurilin/pystack/issues/26.
     if isinstance(exc, AgentRunError):
         return f"Assistant model request failed: {exc}"
     return str(exc)
