@@ -26,17 +26,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# --- Node 24 via the image's nvm (default is 22) -----------------------------
-# nvm is a shell function, so source it first. Disable nounset around the source
-# because nvm.sh references unset variables internally.
-export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-set +u
-# shellcheck disable=SC1091
-. "$NVM_DIR/nvm.sh"
-set -u
-nvm install 24.16.0
-nvm alias default 24.16.0
-nvm use 24.16.0
+# --- Node 24 (image default is an older Node ahead of apt on PATH) -----------
+# shellcheck source=scripts/web-ensure-node.sh
+. scripts/web-ensure-node.sh
+ensure_node_24
 
 # --- dbmate + gitleaks as prebuilt binaries ----------------------------------
 curl -fsSL -o /usr/local/bin/dbmate \

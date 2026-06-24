@@ -16,19 +16,12 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# Node 24 for this session (the image defaults to 22, which trips our >=24.16
-# engine check). Setting nvm's default alias makes every shell the agent later
-# spawns pick up 24.16 too.
-export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-if [ -s "$NVM_DIR/nvm.sh" ]; then
-  set +u
-  # shellcheck disable=SC1091
-  . "$NVM_DIR/nvm.sh"
-  set -u
-  nvm install 24.16.0
-  nvm alias default 24.16.0
-  nvm use 24.16.0
-fi
+# Node 24 for this session (the image default is older, which trips our >=24.16
+# engine check). ensure_node_24 sets nvm's default alias, so every shell the
+# agent later spawns picks up 24.16 too.
+# shellcheck source=scripts/web-ensure-node.sh
+. scripts/web-ensure-node.sh
+ensure_node_24
 
 # The Docker daemon is not always running at session start.
 service docker start 2>/dev/null || sudo service docker start 2>/dev/null || true
