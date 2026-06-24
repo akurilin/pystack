@@ -44,7 +44,9 @@ setup: check-tools backend-sync frontend-install pre-commit-install db-up db-mig
 	@echo "Setup complete. Run 'make dev' to start the application."
 
 backend-sync: ## Install the managed Python runtime and backend dependencies
-	uv python install 3.14
+	# No version argument: uv reads the exact interpreter from .python-version,
+	# keeping the pin in one place across local, CI, container, and prod.
+	uv python install
 	cd $(BACKEND_DIR) && uv sync --all-groups
 
 frontend-install: ## Install locked frontend dependencies
