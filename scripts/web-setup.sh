@@ -46,6 +46,14 @@ if ! curl -fsSL \
   install -m 0755 "$(go env GOPATH)/bin/gitleaks" /usr/local/bin/gitleaks
 fi
 
+# --- uv floor ----------------------------------------------------------------
+# The image's bundled uv can lag behind the Python release we pin in
+# .python-version; an old uv silently resolves a loose pin to a prerelease (this
+# is how 3.14.0rc2 once slipped in). Self-update so the exact pin resolves to the
+# real release. Non-fatal: if uv was not installed standalone, backend-sync still
+# fails loudly below when the pin cannot be found, which is the behavior we want.
+uv self update || true
+
 # --- Project dependencies, in parallel ---------------------------------------
 make backend-sync & pid_backend=$!
 make frontend-install & pid_frontend=$!

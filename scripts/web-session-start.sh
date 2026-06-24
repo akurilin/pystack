@@ -23,8 +23,32 @@ cd "$(dirname "$0")/.."
 . scripts/web-ensure-node.sh
 ensure_node_24
 
-# The Docker daemon is not always running at session start.
-service docker start 2>/dev/null || sudo service docker start 2>/dev/null || true
+# The Docker daemon is not always running at session start, and this image ships
+# no working `service docker` unit — so try the service manager, then fall back
+# to launching dockerd directly, and poll until the daemon actually accepts
+# connections. Everything below (db-up, db-migrate) needs a live daemon; racing
+# ahead while it is still down was silently aborting the rest of this hook under
+# `set -e`, which is why sessions came up with Docker stopped and DBs unmigrated.
+ensure_docker() {
+  docker info >/dev/null 2>&1 && return 0
+
+  service docker start 2>/dev/null || sudo service docker start 2>/dev/null || true
+  local i
+  for i in $(seq 1 5); do docker info >/dev/null 2>&1 && return 0; sleep 1; done
+
+  # No working service unit: start the daemon directly and wait for it.
+  sudo dockerd >/tmp/dockerd.log 2>&1 &
+  for i in $(seq 1 20); do docker info >/dev/null 2>&1 && return 0; sleep 1; done
+
+  echo "ensure_docker: Docker daemon did not become ready; see /tmp/dockerd.log" >&2
+  return 1
+}
+ensure_docker
+
+# Keep uv current before it provisions the pinned Python. An image-bundled uv can
+# lag behind the .python-version release and otherwise resolve a prerelease (see
+# web-setup.sh). Non-fatal here; backend-sync fails loudly if the pin is unmet.
+uv self update || true
 
 # Self-heal dependencies if the setup-script cache layer didn't reach this
 # session (e.g. a different session user). `backend-sync` is fast and idempotent

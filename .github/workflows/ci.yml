@@ -136,7 +136,8 @@ jobs:
           enable-cache: true
 
       - name: Install Python runtime
-        run: uv python install 3.14
+        # No version argument: uv reads the exact interpreter from .python-version.
+        run: uv python install
 
       - name: Set up Go
         uses: actions/setup-go@v6
