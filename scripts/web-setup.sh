@@ -6,14 +6,18 @@
 # (see docs/claude-on-web.md). It runs once as root at environment creation and
 # the result is cached, so it must finish inside the ~5-minute cache budget.
 #
-# Design notes for that budget:
-#   - The base image already ships uv, Go, Docker and Postgres, but NOT our
-#     pinned Node 24 / dbmate / gitleaks, so we install those here.
+# Design notes for that budget and for the sandbox's quirks:
+#   - Node comes from the image's nvm, whose default (v22) shadows any
+#     apt-installed Node on PATH; we install and pin 24.16 through nvm so npm
+#     and our >=24.16 engine check both see the right version.
 #   - CI compiles dbmate and gitleaks with `go install`; here we download the
 #     prebuilt release binaries instead (seconds vs. minutes of compilation).
-#   - Independent, network-bound steps run in parallel and we wait on each PID so
-#     a failure still aborts the build (a non-zero setup script fails the env,
-#     which is what we want — a half-provisioned env is worse than none).
+#   - The Postgres image is NOT pulled here: the Docker daemon is not running at
+#     environment-build time. SessionStart starts Docker and pulls/migrates the
+#     database per session instead.
+#   - Independent, network-bound installs run in parallel and we wait on each
+#     PID so a failure still aborts the build (a non-zero setup script fails the
+#     environment, which is what we want — half-provisioned is worse than none).
 #
 # Playwright/e2e is intentionally NOT installed: `make check` never invokes it,
 # and the browser e2e suite stays in CI. See docs/claude-on-web.md.
@@ -22,10 +26,17 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-# --- Node 24 (base image ships 20-22; .node-version pins 24.16) --------------
-# Must precede `npm ci` below, which comes from this Node install.
-curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-apt-get install -y nodejs
+# --- Node 24 via the image's nvm (default is 22) -----------------------------
+# nvm is a shell function, so source it first. Disable nounset around the source
+# because nvm.sh references unset variables internally.
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+set +u
+# shellcheck disable=SC1091
+. "$NVM_DIR/nvm.sh"
+set -u
+nvm install 24.16.0
+nvm alias default 24.16.0
+nvm use 24.16.0
 
 # --- dbmate + gitleaks as prebuilt binaries ----------------------------------
 curl -fsSL -o /usr/local/bin/dbmate \
@@ -42,13 +53,11 @@ if ! curl -fsSL \
   install -m 0755 "$(go env GOPATH)/bin/gitleaks" /usr/local/bin/gitleaks
 fi
 
-# --- Project dependencies + Postgres image, in parallel ----------------------
+# --- Project dependencies, in parallel ---------------------------------------
 make backend-sync & pid_backend=$!
 make frontend-install & pid_frontend=$!
-docker compose pull db & pid_db=$!
 
 wait "$pid_backend"
 wait "$pid_frontend"
-wait "$pid_db"
 
 echo "web-setup complete."

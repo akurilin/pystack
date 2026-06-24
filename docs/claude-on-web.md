@@ -75,8 +75,17 @@ choices keep it well under that:
 - **dbmate and gitleaks are downloaded as prebuilt binaries**, not compiled with
   `go install` as CI does — compilation alone can eat a couple of minutes.
 - **Independent installs run in parallel** (`make backend-sync`,
-  `make frontend-install`, `docker compose pull`), so wall-clock collapses toward
-  the slowest single step rather than their sum. Expect ~1–2 minutes total.
+  `make frontend-install`), so wall-clock collapses toward the slowest single
+  step rather than their sum. Expect ~1–2 minutes total.
+
+Two sandbox quirks the scripts work around, both discovered the hard way:
+
+- **Node comes from nvm, not apt.** The base image's nvm default is v22, and it
+  shadows any apt-installed Node on `PATH`, so the setup script pins 24.16 via
+  `nvm` and SessionStart re-asserts it each session (the default resets to 22).
+- **Postgres is pulled per session, not at setup.** The Docker daemon is not
+  running during the environment-build phase, so `docker compose pull` can't run
+  there; SessionStart starts Docker and brings up the database instead.
 
 If the environment ever fails to provision, check the setup log for a failed
 download (e.g. a changed gitleaks release-asset name — there's a `go install`
