@@ -5,13 +5,13 @@ description = "FastAPI backend for the Pystack board"
 readme = "README.md"
 requires-python = ">=3.14,<3.15"
 dependencies = [
-    "clerk-backend-api>=6.0.1",
+    "clerk-backend-api>=7.0.0,<8",
     "fastapi>=0.137.1",
     "httpx>=0.28.1",
     "psycopg[binary,pool]>=3.3.4",
     "pydantic>=2.13.4",
-    "pydantic-ai-slim[openrouter]>=1.107.0",
-    "pydantic-settings>=2.14.1",
+    "pydantic-ai-slim[openrouter]>=1.107.7,<2",
+    "pydantic-settings>=2.14.2",
     "sentry-sdk[fastapi]>=2.63.0",
     "uvicorn[standard]>=0.49.0",
 ]
