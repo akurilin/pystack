@@ -276,9 +276,8 @@ The core bootstrap flow is:
    make infra
    ```
 
-3. Configure the GitHub Actions secrets listed in
-   [docs/deploying.md](docs/deploying.md) (`RENDER_API_KEY` and the Clerk/e2e
-   secrets).
+3. Configure the Clerk/e2e GitHub Actions secrets listed in
+   [docs/deploying.md](docs/deploying.md).
 4. Validate the hosted wiring:
 
    ```bash
@@ -286,7 +285,7 @@ The core bootstrap flow is:
    ```
 
 For the full details — manual bootstrap walkthrough, `make infra` reconciliation
-semantics, production migration automation, free vs paid tier paths, custom
+semantics, production migration setup, free vs paid tier paths, custom
 domains, and production database commands — see
 [docs/deploying.md](docs/deploying.md).
 
@@ -318,10 +317,9 @@ Use this checklist when turning the scaffold into a product repository:
      configuration changes.
    - Store real secrets only in ignored `.env` files, GitHub Actions secrets, and
      Render environment variables marked `sync: false`.
-   - Configure GitHub Actions secrets for CI and deployment checks:
+   - Configure GitHub Actions secrets for CI:
      `PYSTACK_CLERK_SECRET_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`,
-     `CLERK_TEST_USER_USERNAME`, `CLERK_TEST_USER_PASSWORD`, and
-     `RENDER_API_KEY`.
+     `CLERK_TEST_USER_USERNAME`, and `CLERK_TEST_USER_PASSWORD`.
    - Re-check `PYSTACK_CORS_ORIGINS`, `PYSTACK_CLERK_AUTHORIZED_PARTIES`, and
      `VITE_API_URL` for every deployed origin.
 5. Rework the database baseline:

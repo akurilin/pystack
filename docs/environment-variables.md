@@ -57,8 +57,8 @@ constants — there's no reason to override them via the environment.
 
 | Variable | Required? | Set in | Purpose |
 |---|---|---|---|
-| `RENDER_API_KEY` | For infra/migrations | CI (secret), Local (optional) | Authenticates `scripts/render_infra.py` and Render-API database discovery. |
-| `DBMATE_PROD_DATABASE_URL` | No (override) | CI (optional), Local (optional) | Bypasses Render-API discovery for prod DBmate commands. Normally unneeded. |
+| `RENDER_API_KEY` | For infra/migrations | Local (optional) | Authenticates `scripts/render_infra.py` and Render-API database discovery. |
+| `DBMATE_PROD_DATABASE_URL` | No (override) | Local (optional) | Bypasses Render-API discovery for prod DBmate commands. Normally unneeded. |
 | `RENDER_CLI_CONFIG_PATH` | No (override) | Local (optional) | Overrides the Render CLI config path (default `~/.render/cli.yaml`). |
 | `PORT` | Auto | Render (provided) | Port uvicorn binds to in the Render start command. |
 | `POSTGRES_PORT` | No | Local (optional) | Host port for the local Postgres container (`compose.yaml`, default `5432`). |

@@ -45,7 +45,6 @@ GITHUB_REQUIRED_SECRETS = [
     "VITE_CLERK_PUBLISHABLE_KEY",
     "CLERK_TEST_USER_USERNAME",
     "CLERK_TEST_USER_PASSWORD",
-    "RENDER_API_KEY",
 ]
 
 RESET = "\033[0m"
@@ -461,7 +460,7 @@ def check_github_secrets(suite: Doctor, repo_name: str) -> None:
     else:
         suite.info(
             "GitHub DB URL override",
-            "DBMATE_PROD_DATABASE_URL is not set; CI will use RENDER_API_KEY discovery",
+            "DBMATE_PROD_DATABASE_URL is not set; production DB commands use Render discovery",
         )
 
 

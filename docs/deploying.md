@@ -25,13 +25,12 @@ does not create the initial Blueprint connection:
 
 3. Configure the repository secrets GitHub Actions needs:
 
-   - `RENDER_API_KEY` — lets CI discover the Render Postgres connection string
-     and run DBmate against production before Render deploys.
    - `PYSTACK_CLERK_SECRET_KEY`, `VITE_CLERK_PUBLISHABLE_KEY`,
      `CLERK_TEST_USER_USERNAME`, and `CLERK_TEST_USER_PASSWORD` — used by CI and
      e2e tests.
-   - `DBMATE_PROD_DATABASE_URL` is optional. Set it only if you need CI or local
-     production DBmate commands to bypass Render discovery.
+
+   `RENDER_API_KEY` is optional for local `make infra` and production DB
+   commands. `DBMATE_PROD_DATABASE_URL` can bypass Render discovery.
 
 4. Validate the hosted wiring:
 
@@ -52,14 +51,10 @@ the production key entered in Render.
 
 ## Production migrations
 
-Production migrations are automated through GitHub Actions while the scaffold is
-compatible with Render's free tier. On each push to `main`, the
-`Production DB Migrations` workflow job waits for the normal `check` and `e2e`
-jobs, then runs `make db-migrate-prod`. The Render services use
-`autoDeployTrigger: checksPass`, so Render deploys only after GitHub checks,
-including the production migration job, have passed. `make db-migrate-prod`
-remains available as a manual recovery/admin command, but it is not the normal
-release path.
+The Pystack Render services and database were removed in October 2026, so CI
+does not run production migrations. Before you create a new deployment, add a
+migration step that runs before each deploy. `make db-migrate-prod` remains
+available for manual use after a production database exists.
 
 The intended paid Render setup is simpler: move DBmate into the backend service's
 Render `preDeployCommand`, keep Render's auto-deploy trigger as the deployment
@@ -86,7 +81,5 @@ URL at runtime from the Render API, then pass it to DBmate or psql without
 writing it to a local file. Set `DBMATE_PROD_DATABASE_URL` in the shell only if
 you need to override Render discovery.
 
-Note that the Render services set `rootDir` to `backend` and `frontend`, so a
-database-only commit under `db/` runs the GitHub migration workflow but does not
-force an application deploy. Include an app change when a migration must be
-released with new application code.
+The Render services set `rootDir` to `backend` and `frontend`. A database-only
+commit under `db/` does not force an application deploy.
