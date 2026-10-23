@@ -1,3 +1,4 @@
+import os
 from collections.abc import Callable, Generator
 
 import psycopg
@@ -7,7 +8,10 @@ from psycopg.conninfo import conninfo_to_dict
 
 from pystack_api.api.auth import get_current_user_id
 from pystack_api.core.config import get_settings
-from pystack_api.main import create_app
+
+# Test collection imports the app. Clear the local DSN first so expected test
+# errors do not reach Sentry.
+os.environ["PYSTACK_SENTRY_DSN"] = ""
 
 settings = get_settings()
 test_conninfo = conninfo_to_dict(settings.test_database_url)
@@ -27,6 +31,8 @@ def clean_tasks() -> Generator[None]:
 
 
 def _build_client(user_id: str) -> TestClient:
+    from pystack_api.main import create_app
+
     test_settings = settings.model_copy(
         update={
             "database_url": settings.test_database_url,
